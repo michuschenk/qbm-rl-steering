@@ -6,15 +6,23 @@ from math import pi, exp
 import numpy as np
 
 
-class TwissElement():
-
+class TwissElement:
     def __init__(self, beta, alpha, d, mu):
+        """
+        :param beta: beta Twiss function value at element
+        :param alpha: alpha Twiss function value at element
+        :param d: ?
+        :param mu: phase advance
+        """
         self.beta = beta
         self.alpha = alpha
         self.mu = mu
 
 
-def transport(element1, element2, x, px):
+def transport(element1: TwissElement, element2: TwissElement, x: float,
+              px: float) -> (float, float):
+    """ Transport (x, xp) coordinate-momentum pair from element 1 to element 2
+    using linear transport. """
     mu = element2.mu - element1.mu
     alpha1 = element1.alpha
     alpha2 = element2.alpha
@@ -23,7 +31,8 @@ def transport(element1, element2, x, px):
 
     m11 = math.sqrt(beta2 / beta1) * (math.cos(mu) + alpha1 * math.sin(mu))
     m12 = math.sqrt(beta1 * beta2) * math.sin(mu)
-    m21 = ((alpha1 - alpha2) * math.cos(mu) - (1 + alpha1 * alpha2) * math.sin(mu)) / math.sqrt(beta1 * beta2)
+    m21 = ((alpha1 - alpha2) * math.cos(mu) - (1 + alpha1 * alpha2) * math.sin(
+        mu)) / math.sqrt(beta1 * beta2)
     m22 = math.sqrt(beta1 / beta2) * (math.cos(mu) - alpha2 * math.sin(mu))
 
     return m11 * x + m12 * px, m21 * x + m22 * px
@@ -35,8 +44,9 @@ class TargetSteeringEnv(gym.Env):
         x0: beam position at origin, i.e. before entering MSSB
         state: beam position at BPM (observation / state)
         mssb_angle: dipole kick angle (rad)
-        mssb_min, mssb_max: min. and max. dipole strengths for initialization (rad)
-        mssb_delta: amount of discrete change in mssb_angle upon action (rad) """
+        mssb_min, mssb_max: min. and max. dipole strengths for init. (rad)
+        mssb_delta: amount of discrete change in mssb_angle upon action (rad)
+        """
         super(TargetSteeringEnv, self).__init__()
 
         # MSSB (dipole) kicker
@@ -51,8 +61,10 @@ class TargetSteeringEnv(gym.Env):
 
         # Define transfer line
         self.mssb = TwissElement(16.1, -0.397093117, 0.045314011, 1.46158005)
-        self.bpm1 = TwissElement(339.174497, -6.521184683, 2.078511443, 2.081365696)
-        self.target = TwissElement(7.976311944, -0.411639485, 0.30867161, 2.398031982)
+        self.bpm1 = TwissElement(339.174497, -6.521184683, 2.078511443,
+                                 2.081365696)
+        self.target = TwissElement(7.976311944, -0.411639485, 0.30867161,
+                                   2.398031982)
 
         # Get possible range of observations to define observation_space
         self.x_min, _ = self._get_pos_at_bpm_target(self.mssb_angle_min)
@@ -127,19 +139,35 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state
 
-    def _get_reward(self, beam_pos):
+    def _get_reward(self, beam_pos: float):
+        """
+        Calculate reward of environment state: reward is defined by integrated
+        intensity on target (assuming Gaussian beam, integration range +/- 3
+        sigma.
+        :param beam_pos: beam position on target (not known to RL agent)
+        :return: reward, float in [0, 1].
+        """
         emittance = 1.1725E-08
         sigma = math.sqrt(self.target.beta * emittance)
         self.intensity_on_target = quad(
-            lambda x: 1 / (sigma * (2 * pi) ** 0.5) * exp((x - beam_pos) ** 2 / (-2 * sigma ** 2)), -3 * sigma,
-            3 * sigma)
+            lambda x: 1 / (sigma * (2 * pi) ** 0.5) * exp(
+                (x - beam_pos) ** 2 / (-2 * sigma ** 2)),
+            -3 * sigma, 3 * sigma)
 
         reward = self.intensity_on_target[0]
         return reward
 
-    def _get_pos_at_bpm_target(self, total_angle):
+    def _get_pos_at_bpm_target(self, total_angle: float) -> (float, float):
+        """
+        Transports beam through the transfer line and calculates the position at
+        the BPM and at the target. These are required for the reward
+        calculation.
+        :param total_angle: total kick angle from the MSSB dipole (rad)
+        :return: position at BPM and reward as a tuple
+        """
         x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
-        x_target, px_target = transport(self.mssb, self.target, self.x0, total_angle)
+        x_target, px_target = transport(self.mssb, self.target, self.x0,
+                                        total_angle)
 
         reward = self._get_reward(x_target)
         return x_bpm, reward

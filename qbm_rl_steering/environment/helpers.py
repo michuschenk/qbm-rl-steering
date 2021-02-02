@@ -35,7 +35,7 @@ def plot_response(env: TargetSteeringEnv) -> None:
 
 
 def run_random_trajectories(env: TargetSteeringEnv, n_epochs: int = 5,
-        n_episodes: int = 40) -> None:
+                            n_episodes: int = 40) -> None:
     """
     Test the environment, create trajectories, use reset, etc. using random
     actions.
@@ -56,7 +56,7 @@ def run_random_trajectories(env: TargetSteeringEnv, n_epochs: int = 5,
     for i in range(3):
         axs[i].plot(log[:, i])
         axs[i].set_ylabel(labels[i])
-        for j in range(n_epochs+1):
+        for j in range(n_epochs + 1):
             axs[i].axvline(j * n_episodes, color='red', ls='--')
     axs[-1].set_xlabel('Iterations')
     plt.tight_layout()

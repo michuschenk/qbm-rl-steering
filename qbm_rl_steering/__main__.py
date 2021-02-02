@@ -16,7 +16,8 @@ if __name__ == "__main__":
     plot_response(my_env)
     run_random_trajectories(my_env)
 
-    # DQN: state and action is discrete: see here: https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html
+    # DQN: state and action is discrete: see here:
+    # https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html
     model = DQN(MlpPolicy, my_env, verbose=1)
     model.learn(total_timesteps=2000)
 
