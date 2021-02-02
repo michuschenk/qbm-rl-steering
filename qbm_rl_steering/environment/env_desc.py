@@ -51,9 +51,9 @@ class TargetSteeringEnv(gym.Env):
 
         # MSSB (dipole) kicker
         self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -400e-6  # rad, BPM pos. of ~ -16 mm
-        self.mssb_angle_max = 400e-6  # rad, BPM pos. of ~ +16 mm
-        self.mssb_delta = 5e-5  # 50 urad as delta
+        self.mssb_angle_min = -500e-6
+        self.mssb_angle_max = 500e-6
+        self.mssb_delta = 5e-5  # discrete action step (rad)
 
         # Beam position
         self.x0 = 0.
@@ -74,7 +74,11 @@ class TargetSteeringEnv(gym.Env):
         self.action_space = gym.spaces.Discrete(3)
         self.observation_space = gym.spaces.Box(
             np.array([self.x_min]), np.array([self.x_max]), dtype=np.float32)
-        self.steps_beyond_done = None
+
+        # For cancellation when beyond certain number of steps in an epoch
+        self.step_count = None
+        self.max_steps_per_epoch = 30
+        self.reward_threshold = 0.9
 
         self.log = []
 
@@ -98,32 +102,20 @@ class TargetSteeringEnv(gym.Env):
         self.state = np.array([x_new])
         self.mssb_angle = total_angle
 
-        # Done?
-        # TODO: introduce max number of episodes? e.g. if not successful after 30 steps
-        # TODO: target: if intensity high enough, cancel as well.
+        self.step_count += 1
+
+        # epoch done?
         done = bool(
-            x_new > self.x_max
-            or x_new < self.x_min)
+            self.step_count > self.max_steps_per_epoch
+            or reward > self.reward_threshold)
+        # or x_new > self.x_max
+        # or x_new < self.x_min)
+
+        if reward > self.reward_threshold:
+            reward = 2.
 
         # Keep history
         self.log.append([x, action, reward, x_new, done])
-
-        # from cartpole.py
-        if not done:
-            pass
-        elif self.steps_beyond_done is None:
-            # Beam outside allowed position
-            self.steps_beyond_done = 0
-        else:
-            if self.steps_beyond_done == 0:
-                gym.logger.warn(
-                    "You are calling 'step()' even though this "
-                    "environment has already returned done = True. You "
-                    "should always call 'reset()' once you receive 'done = "
-                    "True' -- any further steps are undefined behavior."
-                )
-            self.steps_beyond_done += 1
-            reward = 0.
 
         return self.state, reward, done, {}
 
@@ -136,6 +128,7 @@ class TargetSteeringEnv(gym.Env):
 
         x, _ = self._get_pos_at_bpm_target(self.mssb_angle)
         self.state = np.array([x])
+        self.step_count = 0
 
         return self.state
 
