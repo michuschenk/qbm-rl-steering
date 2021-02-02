@@ -116,8 +116,16 @@ class TargetSteeringEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        pass
+        """ Reset the environment. Initialize self.mssb_angle as a multiple of
+        self.mssb_delta. """
+        idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
+        idx = np.random.randint(idx_max)
+        self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
 
+        x, _ = self._get_pos_at_bpm_target(self.mssb_angle)
+        self.state = np.array([x])
+
+        return self.state
 
     def _get_reward(self, beam_pos):
         emittance = 1.1725E-08
