@@ -61,3 +61,29 @@ def run_random_trajectories(env: TargetSteeringEnv, n_epochs: int = 5,
     axs[-1].set_xlabel('Iterations')
     plt.tight_layout()
     plt.show()
+
+
+def plot_log(env: TargetSteeringEnv, title: str = '',
+             plot_epoch_end: bool = False) -> None:
+    """
+    Plot the evolution of the state, action, and reward using the data stored
+    in env.log .
+    :param env: openAI gym environment
+    :param title: figure title
+    :return: None
+    """
+    log = np.array(env.log)
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 6))
+    fig.suptitle(title)
+    labels = ('state', 'action', 'reward')
+    for i in range(3):
+        axs[i].plot(log[:, i])
+        axs[i].set_ylabel(labels[i])
+
+        if plot_epoch_end:
+            epoch_ends = np.where(log[:, -1] == 1)[0]
+            for ep in epoch_ends:
+                axs[i].axvline(ep, color='red', ls='--')
+    axs[-1].set_xlabel('Steps')
+    plt.tight_layout()
+    plt.show()
