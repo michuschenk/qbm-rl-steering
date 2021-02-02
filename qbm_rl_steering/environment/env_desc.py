@@ -70,7 +70,50 @@ class TargetSteeringEnv(gym.Env):
         self.reset()
 
     def step(self, action):
-        pass
+        """ Action is discrete here and is an integer number in set {0, 1, 2}.
+        Action_map shows how action is mapped to change of self.mssb_angle. """
+
+        err_msg = f"{action} ({type(action)}) invalid"
+        assert self.action_space.contains(action), err_msg
+
+        x, = self.state
+
+        # Apply action and update environment
+        action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
+        total_angle = self.mssb_angle + action_map[action]
+        x_new, reward = self._get_pos_at_bpm_target(total_angle)
+
+        self.state = np.array([x_new])
+        self.mssb_angle = total_angle
+
+        # Done?
+        # TODO: introduce max number of episodes? e.g. if not successful after 30 steps
+        # TODO: target: if intensity high enough, cancel as well.
+        done = bool(
+            x_new > self.x_max
+            or x_new < self.x_min)
+
+        # Keep history
+        self.log.append([x, action, reward, x_new, done])
+
+        # from cartpole.py
+        if not done:
+            pass
+        elif self.steps_beyond_done is None:
+            # Beam outside allowed position
+            self.steps_beyond_done = 0
+        else:
+            if self.steps_beyond_done == 0:
+                gym.logger.warn(
+                    "You are calling 'step()' even though this "
+                    "environment has already returned done = True. You "
+                    "should always call 'reset()' once you receive 'done = "
+                    "True' -- any further steps are undefined behavior."
+                )
+            self.steps_beyond_done += 1
+            reward = 0.
+
+        return self.state, reward, done, {}
 
     def reset(self):
         pass
