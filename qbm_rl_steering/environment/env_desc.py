@@ -3,6 +3,7 @@ import gym
 import math
 from scipy.integrate import quad
 from math import pi, exp
+import numpy as np
 
 
 class TwissElement():
@@ -30,16 +31,43 @@ def transport(element1, element2, x, px):
 
 class TargetSteeringEnv(gym.Env):
     def __init__(self):
+        """
+        x0: beam position at origin, i.e. before entering MSSB
+        state: beam position at BPM (observation / state)
+        mssb_angle: dipole kick angle (rad)
+        mssb_min, mssb_max: min. and max. dipole strengths for initialization (rad)
+        mssb_delta: amount of discrete change in mssb_angle upon action (rad) """
+        super(TargetSteeringEnv, self).__init__()
+
+        # MSSB (dipole) kicker
+        self.mssb_angle = None  # not set, will be init. with self.reset()
+        self.mssb_angle_min = -400e-6  # rad, BPM pos. of ~ -16 mm
+        self.mssb_angle_max = 400e-6  # rad, BPM pos. of ~ +16 mm
+        self.mssb_delta = 5e-5  # 50 urad as delta
+
+        # Beam position
         self.x0 = 0.
-        self.mssb = twissElement(16.1, -0.397093117, 0.045314011, 1.46158005)
-        self.bpm1 = twissElement(339.174497, -6.521184683, 2.078511443, 2.081365696)
-        self.target = twissElement(7.976311944, -0.411639485, 0.30867161, 2.398031982)
+        self.state = None  # not set, will be init. with self.reset()
 
-        self.mssb_angle = 0. #radian: will have to be randomly set; e.g. some multiples of a delta
-        self.delta = 5e-5 # 50 urad as delta
+        # Define transfer line
+        self.mssb = TwissElement(16.1, -0.397093117, 0.045314011, 1.46158005)
+        self.bpm1 = TwissElement(339.174497, -6.521184683, 2.078511443, 2.081365696)
+        self.target = TwissElement(7.976311944, -0.411639485, 0.30867161, 2.398031982)
 
+        # Get possible range of observations to define observation_space
+        self.x_min, _ = self._get_pos_at_bpm_target(self.mssb_angle_min)
+        self.x_max, _ = self._get_pos_at_bpm_target(self.mssb_angle_max)
 
+        # Gym requirements
+        self.action_space = gym.spaces.Discrete(3)
+        self.observation_space = gym.spaces.Box(
+            np.array([self.x_min]), np.array([self.x_max]), dtype=np.float32)
+        self.steps_beyond_done = None
 
+        self.log = []
+
+        # First initialization
+        self.reset()
 
     def step(self, action):
         pass
