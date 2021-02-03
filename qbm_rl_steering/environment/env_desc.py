@@ -39,10 +39,8 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 
 class TargetSteeringEnv(gym.Env):
-    def __init__(self, n_bits_observation=None):
+    def __init__(self):
         """
-        :param n_bits_observation : number of bits for discretization of
-        observation space
         x0: beam position at origin, i.e. before entering MSSB
         state: beam position at BPM (observation / state)
         mssb_angle: dipole kick angle (rad)
@@ -74,25 +72,8 @@ class TargetSteeringEnv(gym.Env):
 
         # Gym requirements
         self.action_space = gym.spaces.Discrete(3)
-
-        if n_bits_observation is None:
-            # continuous observation space
-            self.observation_space = gym.spaces.Box(
-                np.array([self.x_min]), np.array([self.x_max]))
-        else:
-            # This should create a ANN input layer with n_bits_observation
-            # nodes (?!). We are going then going to use a binary encoded
-            # state vector.
-            self.observation_space = gym.spaces.Discrete(n_bits_observation)
-
-        # Discretization of observation space
-        self.observation_bin_width = None
-        self.state_is_binary = False
-        if n_bits_observation is not None:
-            self.observation_bin_width = (
-                (self.x_max - self.x_min) / 2**n_bits_observation)
-            self.state_is_binary = True
-        self.n_bits_observation = n_bits_observation
+        self.observation_space = gym.spaces.Box(
+            np.array([self.x_min]), np.array([self.x_max]), dtype=np.float32)
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
@@ -111,33 +92,30 @@ class TargetSteeringEnv(gym.Env):
         err_msg = f"{action} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
 
+        x, = self.state
+
         # Apply action and update environment
         action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
         total_angle = self.mssb_angle + action_map[action]
         x_new, reward = self._get_pos_at_bpm_target(total_angle)
 
-        if self.state_is_binary:
-            x_binary = self.state
-            x_new_binary = self._make_state_discrete_binary(x_new)
-            self.state = np.array(x_new_binary)
-        else:
-            x, = self.state
-            self.state = np.array([x_new])
+        self.state = np.array([x_new])
         self.mssb_angle = total_angle
 
-        # epoch done?
         self.step_count += 1
+
+        # epoch done?
         done = bool(
             self.step_count > self.max_steps_per_epoch
-            or reward > self.reward_threshold
-            or x_new > self.x_max
-            or x_new < self.x_min)
+            or reward > self.reward_threshold)
+        # or x_new > self.x_max
+        # or x_new < self.x_min)
+
+        # if reward > self.reward_threshold:
+        #     reward = 2.
 
         # Keep history
-        if self.state_is_binary:
-            self.log.append([x_binary, action, reward, x_new_binary, done])
-        else:
-            self.log.append([x, action, reward, x_new, done])
+        self.log.append([x, action, reward, x_new, done])
 
         return self.state, reward, done, {}
 
@@ -148,13 +126,10 @@ class TargetSteeringEnv(gym.Env):
         idx = np.random.randint(idx_max)
         self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
 
-        x_init, _ = self._get_pos_at_bpm_target(self.mssb_angle)
-        if self.state_is_binary:
-            self.state = self._make_state_discrete_binary(x_init)
-        else:
-            self.state = np.array([x_init])
-
+        x, _ = self._get_pos_at_bpm_target(self.mssb_angle)
+        self.state = np.array([x])
         self.step_count = 0
+
         return self.state
 
     def _get_reward(self, beam_pos: float):
@@ -189,27 +164,3 @@ class TargetSteeringEnv(gym.Env):
 
         reward = self._get_reward(x_target)
         return x_bpm, reward
-
-    def _make_state_discrete_binary(self, x):
-        """ Discretize state into 2**self.n_bits_observation bins and convert to
-        binary format.
-        :return x_binary : np.array of length self.n_bits_observation
-        encoding the state in discrete, binary format.
-        """
-        bin_idx = int((x - self.x_min) / self.observation_bin_width)
-
-        binary_string = bin(bin_idx).strip('0b').rjust(
-            self.n_bits_observation, '0')
-        x_binary = np.array([int(i) for i in binary_string])
-        return x_binary
-
-    def _make_binary_state_int(self, x_binary):
-        """ This is the inverse operation of _make_state_discrete_binary(..).
-        I.e. we take a binary input (np.array) of length
-        self.n_bits_observation and convert it into a float corresponding to
-        the BPM position. """
-        binary_string = ''.join([str(i) for i in x_binary])
-        bin_idx = int(binary_string, 2)
-        x = bin_idx * self.observation_bin_width + self.x_min
-        return x
-
