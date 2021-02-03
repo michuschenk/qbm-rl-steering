@@ -11,7 +11,7 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     :return: None
     """
     # Scan through angles and plot response
-    angles = np.linspace(env.mssb_angle_min, env.mssb_angle_max, 100)
+    angles = np.linspace(env.mssb_angle_min, env.mssb_angle_max, 200)
     x_bpm = np.zeros_like(angles)
     rewards = np.zeros_like(angles)
     for i, ang in enumerate(angles):
@@ -23,6 +23,25 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     fig.suptitle(fig_title)
     ax1 = plt.gca()
     l1, = ax1.plot(angles, x_bpm, 'b')
+
+    ax1.axhline(env.x_min - env.x_margin_abort_episode, color='grey')
+    ax1.axhline(env.x_min - env.x_margin_discretisation, color='black')
+
+    l11 = ax1.axhline(env.x_max + env.x_margin_abort_episode, color='grey')
+    l12 = ax1.axhline(env.x_max + env.x_margin_discretisation, color='black')
+
+    for i in np.arange(
+            env.x_min - env.x_margin_discretisation,
+            env.x_max + env.x_margin_discretisation,
+            env.x_delta):
+        ax1.axhline(i, color='black', ls='--', lw=0.5)
+
+    # for i in np.arange(
+    #         env.x_min - env.x_margin_discretisation,
+    #         env.x_max + env.x_margin_discretisation,
+    #         env.observation_bin_width):
+    #     ax1.axhline(i, color='g', ls='--', lw=0.5)
+
     ax1.set_xlabel('MSSB angle (rad)')
     ax1.set_ylabel('BPM pos. (m)')
 
@@ -30,7 +49,9 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     l2, = ax2.plot(angles, rewards, 'r')
     ax2.set_ylabel('Reward')
 
-    plt.legend((l1, l2), ('BPM pos.', 'Reward'),
+    plt.legend((l1, l11, l12, l2),
+               ('BPM pos.', 'Margin episode abort',
+                'Margin discretisation', 'Reward'),
                loc='upper left')
     plt.tight_layout()
     plt.show()
