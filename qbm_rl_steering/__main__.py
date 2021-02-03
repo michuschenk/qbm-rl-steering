@@ -10,7 +10,7 @@ from stable_baselines3.dqn import MlpPolicy
 
 if __name__ == "__main__":
     # Transfer line environment
-    my_env = TargetSteeringEnv(n_bits_observation=8)
+    my_env = TargetSteeringEnv()
 
     # To understand environment better, plot response and test random
     # action-taking
@@ -25,8 +25,6 @@ if __name__ == "__main__":
     #     print(my_env.step(action=1))
     #     print(my_env.mssb_angle)
     #     print(my_env._make_binary_state_int(state))
-
-
 
     # DQN: state and action is discrete: see here:
     # https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html
