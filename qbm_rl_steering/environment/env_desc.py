@@ -51,9 +51,9 @@ class TargetSteeringEnv(gym.Env):
 
         # MSSB (dipole) kicker
         self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -500e-6
-        self.mssb_angle_max = 500e-6
-        self.mssb_delta = 5e-5  # discrete action step (rad)
+        self.mssb_angle_min = -200e-6
+        self.mssb_angle_max = 200e-6
+        self.mssb_delta = 1e-5  # discrete action step (rad)
 
         # Beam position
         self.x0 = 0.
@@ -77,8 +77,8 @@ class TargetSteeringEnv(gym.Env):
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
-        self.max_steps_per_epoch = 30
-        self.reward_threshold = 0.9
+        self.max_steps_per_epoch = 40
+        self.reward_threshold = 0.95
 
         self.log = []
 
@@ -104,15 +104,12 @@ class TargetSteeringEnv(gym.Env):
 
         self.step_count += 1
 
-        # epoch done?
+        # Episode done?
         done = bool(
             self.step_count > self.max_steps_per_epoch
-            or reward > self.reward_threshold)
-        # or x_new > self.x_max
-        # or x_new < self.x_min)
-
-        # if reward > self.reward_threshold:
-        #     reward = 2.
+            or reward > self.reward_threshold
+            or x_new > 1.5*self.x_max  # add 50 % margin for episode to end
+            or x_new < 1.5*self.x_min)
 
         # Keep history
         self.log.append([x, action, reward, x_new, done])
