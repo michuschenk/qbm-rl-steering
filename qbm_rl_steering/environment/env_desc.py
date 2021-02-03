@@ -51,9 +51,9 @@ class TargetSteeringEnv(gym.Env):
 
         # MSSB (dipole) kicker
         self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -200e-6
-        self.mssb_angle_max = 200e-6
-        self.mssb_delta = 1e-5  # discrete action step (rad)
+        self.mssb_angle_min = -150e-6
+        self.mssb_angle_max = 150e-6
+        self.mssb_delta = 2e-5  # discrete action step (rad)
 
         # Beam position
         self.x0 = 0.
@@ -77,13 +77,11 @@ class TargetSteeringEnv(gym.Env):
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
-        self.max_steps_per_epoch = 40
+        self.max_steps_per_epoch = 25
         self.reward_threshold = 0.95
 
-        self.log = []
-
-        # First initialization
-        self.reset()
+        self.log_all = []
+        self.log_episode = []
 
     def step(self, action):
         """ Action is discrete here and is an integer number in set {0, 1, 2}.
@@ -108,11 +106,14 @@ class TargetSteeringEnv(gym.Env):
         done = bool(
             self.step_count > self.max_steps_per_epoch
             or reward > self.reward_threshold
-            or x_new > 1.5*self.x_max  # add 50 % margin for episode to end
-            or x_new < 1.5*self.x_min)
+            or x_new > 1.2*self.x_max  # add 20 % margin for episode to end
+            or x_new < 1.2*self.x_min)
 
         # Keep history
-        self.log.append([x, action, reward, x_new, done])
+        self.log_episode.append([x, action, reward, x_new, done])
+
+        if done:
+            self.log_all.append(self.log_episode)
 
         return self.state, reward, done, {}
 
@@ -126,6 +127,7 @@ class TargetSteeringEnv(gym.Env):
         x, _ = self._get_pos_at_bpm_target(self.mssb_angle)
         self.state = np.array([x])
         self.step_count = 0
+        self.log_episode = []
 
         return self.state
 
@@ -142,7 +144,7 @@ class TargetSteeringEnv(gym.Env):
         self.intensity_on_target = quad(
             lambda x: 1 / (sigma * (2 * pi) ** 0.5) * exp(
                 (x - beam_pos) ** 2 / (-2 * sigma ** 2)),
-            -3 * sigma, 3 * sigma)
+            -3*sigma, 3*sigma)
 
         reward = self.intensity_on_target[0]
         return reward
@@ -156,8 +158,8 @@ class TargetSteeringEnv(gym.Env):
         :return: position at BPM and reward as a tuple
         """
         x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
-        x_target, px_target = transport(self.mssb, self.target, self.x0,
-                                        total_angle)
+        x_target, px_target = transport(
+            self.mssb, self.target, self.x0, total_angle)
 
         reward = self._get_reward(x_target)
-        return x_bpm, reward
+        return 100*x_bpm, reward
