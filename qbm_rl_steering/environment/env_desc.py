@@ -111,8 +111,8 @@ class TargetSteeringEnv(gym.Env):
         # or x_new > self.x_max
         # or x_new < self.x_min)
 
-        if reward > self.reward_threshold:
-            reward = 2.
+        # if reward > self.reward_threshold:
+        #     reward = 2.
 
         # Keep history
         self.log.append([x, action, reward, x_new, done])
