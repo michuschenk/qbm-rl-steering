@@ -67,28 +67,41 @@ def run_random_trajectories(env: TargetSteeringEnv, n_epochs: int = 5,
     plt.show()
 
 
-def plot_log(env: TargetSteeringEnv, fig_title: str = '',
-             plot_epoch_end: bool = False) -> None:
+def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     """
     Plot the evolution of the state, action, and reward using the data stored
     in env.log .
     :param env: openAI gym environment
     :param fig_title: figure title
-    :param plot_epoch_end: flag to switch on/off the markers for end of epsiode
     :return: None
     """
-    log = np.array(env.log)
-    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 6))
+    log_all = np.array(env.log_all)
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 5))
     fig.suptitle(fig_title)
-    labels = ('state', 'action', 'reward')
-    for i in range(3):
-        axs[i].plot(log[:, i])
-        axs[i].set_ylabel(labels[i])
 
-        if plot_epoch_end:
-            epoch_ends = np.where(log[:, -1] == 1)[0]
-            for ep in epoch_ends:
-                axs[i].axvline(ep, color='red', ls='--')
-    axs[-1].set_xlabel('Steps')
+    # rewards correspond to intensity
+    reward_init = []
+    reward_final = []
+    nb_steps = []
+    for ep in range(len(log_all)):
+        log_ep = log_all[ep]
+        nb_steps.append(len(log_ep))
+        reward_init.append(log_ep[0][2])
+        reward_final.append(log_ep[-1][2])
+
+    episode = np.arange(len(log_all))
+    reward_init = np.array(reward_init)
+    reward_final = np.array(reward_final)
+    nb_steps = np.array(nb_steps)
+
+    axs[0].plot(episode, nb_steps)
+    axs[1].plot(episode, reward_init, 'g', label='Initial')
+    axs[1].plot(episode, reward_final, 'b', label='Final')
+    axs[1].axhline(0.998, c='r', ls='--', label='Target')
+
+    axs[0].set_ylabel('Nb. steps')
+    axs[1].set_ylabel('Reward')
+    axs[1].legend(loc='lower left')
+    axs[-1].set_xlabel('Episode')
     plt.tight_layout()
     plt.show()

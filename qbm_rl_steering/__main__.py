@@ -4,8 +4,6 @@ from environment.helpers import plot_log
 
 from stable_baselines3 import DQN
 from stable_baselines3.dqn import MlpPolicy
-# from stable_baselines.deepq.dqn import DQN
-# from stable_baselines.deepq.policies import MlpPolicy
 
 
 if __name__ == "__main__":
@@ -16,6 +14,7 @@ if __name__ == "__main__":
     # action-taking
     # plot_response(my_env, fig_title='Env. test: response function')
     # run_random_trajectories(my_env, fig_title='Env test: random trajectories')
+
 
     # Test binary states
     # my_env = TargetSteeringEnv(n_bits_observation=8)
@@ -28,11 +27,10 @@ if __name__ == "__main__":
 
     # DQN: state and action is discrete: see here:
     # https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html
-    agent = DQN(MlpPolicy, my_env, verbose=1, learning_starts=1000,
-                learning_rate=0.001)
-    agent.learn(total_timesteps=5000)
+    agent = DQN(MlpPolicy, my_env, verbose=1, learning_starts=500)
+    agent.learn(total_timesteps=2000)
 
-    plot_log(my_env, fig_title='Agent training', plot_epoch_end=False)
+    plot_log(my_env, fig_title='Agent training')
 
     # Save agent and delete
     agent.save("dqn_transferline")
@@ -43,7 +41,7 @@ if __name__ == "__main__":
     obs = my_env.reset()
     agent = DQN.load("dqn_transferline")
 
-    n_epochs_test = 10
+    n_epochs_test = 100
     epoch_count = 0
     while epoch_count < n_epochs_test:
         action, _states = agent.predict(obs, deterministic=True)
@@ -53,4 +51,4 @@ if __name__ == "__main__":
             obs = my_env.reset()
             epoch_count += 1
 
-    plot_log(my_env, fig_title='Agent test after training', plot_epoch_end=True)
+    plot_log(my_env, fig_title='Agent test after training')
