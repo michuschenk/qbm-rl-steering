@@ -118,7 +118,7 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     axs[0].plot(episode, nb_steps)
     axs[1].plot(episode, reward_init, 'g', label='Initial')
     axs[1].plot(episode, reward_final, 'b', label='Final')
-    axs[1].axhline(0.998, c='r', ls='--', label='Target')
+    axs[1].axhline(env._get_max_reward(), c='r', ls='--', label='Target')
 
     axs[0].set_ylabel('Nb. steps')
     axs[1].set_ylabel('Reward')
@@ -126,3 +126,23 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     axs[-1].set_xlabel('Episode')
     plt.tight_layout()
     plt.show()
+
+
+def test_agent(env, agent, n_epochs=100, fig_title='Agent test'):
+    """ Run agent for a number of epochs on environment and plot log.
+    :param env: openAI gym environment
+    :param agent: agent (trained or untrained)
+    :param n_epochs: number of epochs for the test
+    :param fig_title: figure title of output plot
+    :return: None
+    """
+    epoch_count = 0
+    obs = env.reset()
+    while epoch_count < n_epochs:
+        action, _states = agent.predict(obs, deterministic=True)
+        obs, reward, done, info = env.step(action)
+        # agent.render()
+        if done:
+            obs = env.reset()
+            epoch_count += 1
+    plot_log(env, fig_title=fig_title)
