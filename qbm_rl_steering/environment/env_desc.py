@@ -157,14 +157,9 @@ class TargetSteeringEnv(gym.Env):
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta. """
         idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
-
-        # Loop until finding an x_init that is in valid range
-        x_init = np.inf
-        while (x_init > (self.x_max + self.x_margin_abort_episode) or
-               x_init < (self.x_min - self.x_margin_abort_episode)):
-            idx = np.random.randint(idx_max)
-            self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
-            x_init, _ = self._get_pos_at_bpm_target(self.mssb_angle)
+        idx = np.random.randint(idx_max)
+        self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
+        x_init, _ = self._get_pos_at_bpm_target(self.mssb_angle)
 
         x_init_binary = self._make_state_discrete_binary(x_init)
         self.state = x_init_binary
