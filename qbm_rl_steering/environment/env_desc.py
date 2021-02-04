@@ -1,9 +1,9 @@
-import gym
-
+import numpy as np
 import math
 from scipy.integrate import quad
-from math import pi, exp
-import numpy as np
+import gym
+
+from .logger import Logger
 
 
 class TwissElement:
@@ -88,6 +88,7 @@ class TargetSteeringEnv(gym.Env):
         # Gym requirements
         # Define action space with 3 discrete actions.
         self.action_space = gym.spaces.Discrete(3)
+        self.action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
 
         # This will create a discrete state space with
         # length n_bits_observation_space, i.e. the Q-network will have
@@ -106,13 +107,7 @@ class TargetSteeringEnv(gym.Env):
         self.reward_threshold = 0.9 * self.get_max_reward()
 
         # Logging
-        self.log_all = []
-        self.log_episode = []
-        self.done_reason_map = {
-            -1: '',
-            0: 'Max. # steps',
-            1: 'Reward thresh.',
-            2: 'State OOB'}
+        self.logger = Logger()
         self.debug = debug
 
     def step(self, action):
@@ -125,8 +120,7 @@ class TargetSteeringEnv(gym.Env):
         x_binary = self.state
 
         # Apply action and update environment
-        action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
-        total_angle = self.mssb_angle + action_map[action]
+        total_angle = self.mssb_angle + self.action_map[action]
         x_new, reward = self.get_pos_at_bpm_target(total_angle)
         x_new_binary = self._make_state_discrete_binary(x_new)
         self.state = x_new_binary
@@ -138,7 +132,7 @@ class TargetSteeringEnv(gym.Env):
             print('x_new_discrete', x_new_discrete)
             print('x_new_binary', x_new_binary)
             print('x_new_binary_float',
-                  self._make_binary_state_float(x_new_binary))
+                  self.make_binary_state_float(x_new_binary))
 
         self.step_count += 1
 
@@ -163,10 +157,10 @@ class TargetSteeringEnv(gym.Env):
             pass
 
         # Log history
-        self.log_episode.append([x_binary, action, reward, x_new_binary,
-                                 done, done_reason])
+        self.logger.log_episode.append(
+            [x_binary, action, reward, x_new_binary, done, done_reason])
         if done:
-            self.log_all.append(self.log_episode)
+            self.logger.log_all.append(self.logger.log_episode)
 
         return self.state, reward, done, {}
 
@@ -182,21 +176,20 @@ class TargetSteeringEnv(gym.Env):
         self.state = x_init_binary
 
         self.step_count = 0
-        self.log_episode = []
+        self.logger.episode_reset()
 
         if self.debug:
             print('x_init', x_init)
             print('x_init_discrete', self._make_state_discrete(x_init))
             print('x_init_binary', x_init_binary)
             print('x_init_binary_float',
-                  self._make_binary_state_float(x_init_binary))
+                  self.make_binary_state_float(x_init_binary))
 
         return self.state
 
     def clear_log(self):
         """ Delete log / history of the environment. """
-        self.log_episode = []
-        self.log_all = []
+        self.logger.clear_all()
 
     def _get_reward(self, beam_pos: float):
         """
@@ -209,7 +202,7 @@ class TargetSteeringEnv(gym.Env):
         emittance = 1.1725E-08
         sigma = math.sqrt(self.target.beta * emittance)
         self.intensity_on_target = quad(
-            lambda x: 1 / (sigma * (2 * pi) ** 0.5) * exp(
+            lambda x: 1 / (sigma * (2 * math.pi) ** 0.5) * math.exp(
                 (x - beam_pos) ** 2 / (-2 * sigma ** 2)),
             -3*sigma, 3*sigma)
 
@@ -261,7 +254,7 @@ class TargetSteeringEnv(gym.Env):
                       self.observation_bin_width)
         return bin_idx
 
-    def _make_binary_state_float(self, x_binary):
+    def make_binary_state_float(self, x_binary):
         """ This is the inverse operation of _make_state_discrete_binary(..).
         I.e. we take a binary input list of length
         self.n_bits_observation_space and convert it into a float

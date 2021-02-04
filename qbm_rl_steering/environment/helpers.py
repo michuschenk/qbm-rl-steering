@@ -4,8 +4,7 @@ from .env_desc import TargetSteeringEnv
 
 
 def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
-    """
-    Scan through angles and plot response of transfer line environment
+    """ Scan through angles and plot response of transfer line environment
     :param env: openAI gym-based environment of transfer line
     :param fig_title: figure title
     :return: None
@@ -19,27 +18,20 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
         x_bpm[i] = x
         rewards[i] = r
 
-    fig = plt.figure(1)
+    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(5, 4))
     fig.suptitle(fig_title)
-    ax1 = plt.gca()
-    l1, = ax1.plot(angles, x_bpm, 'b')
+    l1, = axs[0].plot(angles, x_bpm, 'b')
 
-    ax1.axhline(env.x_min - env.x_margin_abort_episode, color='grey')
-    ax1.axhline(env.x_min - env.x_margin_discretisation, color='black')
+    axs[0].axhline(env.x_min - env.x_margin_abort_episode, color='grey')
+    axs[0].axhline(env.x_min - env.x_margin_discretisation, color='black')
 
-    l11 = ax1.axhline(env.x_max + env.x_margin_abort_episode, color='grey')
-    l12 = ax1.axhline(env.x_max + env.x_margin_discretisation, color='black')
+    l11 = axs[0].axhline(env.x_max + env.x_margin_abort_episode, color='grey')
+    l12 = axs[0].axhline(env.x_max + env.x_margin_discretisation, color='black')
 
-    # for i in np.arange(
-    #         env.x_min - env.x_margin_discretisation,
-    #         env.x_max + env.x_margin_discretisation,
-    #         env.x_delta):
-    #     ax1.axhline(i, color='black', ls='--', lw=0.5)
+    axs[0].set_xlabel('MSSB angle (rad)')
+    axs[0].set_ylabel('BPM pos. (m)')
 
-    ax1.set_xlabel('MSSB angle (rad)')
-    ax1.set_ylabel('BPM pos. (m)')
-
-    ax2 = ax1.twinx()
+    ax2 = axs[0].twinx()
     l2, = ax2.plot(angles, rewards, 'r')
     ax2.set_ylabel('Reward')
 
@@ -53,8 +45,7 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
 
 def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
                             fig_title: str = '') -> None:
-    """
-    Test the environment, create trajectories, use reset, etc. using random
+    """ Test the environment, create trajectories, use reset, etc. using random
     actions.
     :param env: openAI gym environment
     :param n_episodes: number of episode to run
@@ -70,35 +61,18 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
         if done:
             env.reset()
             episode_count += 1
-    log_all = env.log_all
 
-    # Unpack data (convert states from binary to floats)
-    state = []
-    action = []
-    reward = []
-    n = 0
-    for log_ep in log_all:
-        for data in log_ep:
-            state.append(env._make_binary_state_float(data[0]))
-            action.append(data[1])
-            reward.append(data[2])
-            n += 1
-    state = np.array(state)
-    action = np.array(action)
-    reward = np.array(reward)
+    # Extract all data and convert binary states to floats
+    data, n_steps = env.logger.extract_all_data()
+    for i, s in enumerate(data['state']):
+        data['state'][i] = env.make_binary_state_float(s)
 
     # Plot
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 6))
     fig.suptitle(fig_title)
-    axs[0].plot(state)
-    axs[1].plot(action)
-    axs[2].plot(reward)
-
-    # Ends of episodes
-    n_steps = []
-    for log_ep in log_all:
-        n_steps.append(len(log_ep))
-    n_steps = np.cumsum(np.array(n_steps))
+    axs[0].plot(data['state'])
+    axs[1].plot(data['action'])
+    axs[2].plot(data['reward'])
 
     for i in range(3):
         for j in n_steps:
@@ -114,52 +88,39 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
 
 
 def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
-    """
-    Plot the evolution of the state, action, and reward using the data stored
-    in env.log .
+    """ Plot the evolution of the state, action, and reward using the data
+    stored in env.log .
     :param env: openAI gym environment
     :param fig_title: figure title
     :return: None
     """
+    episodic_data = env.logger.extract_episodic_data()
+
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 7))
     fig.suptitle(fig_title)
 
-    # Extract logging data
-    # Rewards correspond to integrated intensity on target
-    log_all = env.log_all
-    n_episodes = len(log_all)
-    episode_count = np.arange(n_episodes)
-    episode_length = np.zeros(n_episodes)
-    reward_init = np.zeros(n_episodes)
-    reward_final = np.zeros(n_episodes)
-    done_reason = np.zeros(n_episodes)
-    for i, log_ep in enumerate(log_all):
-        episode_length[i] = len(log_ep) - 1  # we don't count the last entry
-        reward_init[i] = log_ep[0][2]
-        reward_final[i] = log_ep[-1][2]
-        done_reason[i] = log_ep[-1][5]
-
     # Episode abort reason
-    axs[0].plot(episode_count, done_reason, 'tab:blue', ls='None',
-                marker='.', ms=4)
-    axs[0].set_yticks([i for i in env.done_reason_map.keys()])
-    axs[0].set_yticklabels([s for s in env.done_reason_map.values()],
-                           rotation=45)
-    axs[0].set_ylim(-0.5, max(env.done_reason_map.keys()) + 0.5)
+    axs[0].plot(episodic_data['episode_count'], episodic_data['done_reason'],
+                c='tab:blue', ls='None', marker='.', ms=4)
+    axs[0].set_yticks([i for i in env.logger.done_reason_map.keys()])
+    axs[0].set_yticklabels(
+        [s for s in env.logger.done_reason_map.values()], rotation=45)
+    axs[0].set_ylim(-0.5, max(env.logger.done_reason_map.keys()) + 0.5)
 
     # Episode length
-    axs[1].plot(episode_count, episode_length, c='tab:blue')
-    axs[1].axhline(env.max_steps_per_epoch, c='k',
-                   label='Max. # steps')
+    axs[1].plot(episodic_data['episode_count'], episodic_data['episode_length'],
+                c='tab:blue')
+    axs[1].axhline(env.max_steps_per_epoch, c='k', label='Max. # steps')
     axs[1].axhline(env.get_max_n_steps_optimal_behaviour(),
                    c='k', ls='--', label='UB optimal behaviour')
     axs[1].set_ylim(0, 1.1*env.max_steps_per_epoch)
 
     # Reward
-    axs[2].plot(episode_count, reward_init, 'tab:green', label='Initial')
-    axs[2].plot(episode_count, reward_final, 'tab:red', label='Final')
-    axs[2].axhline(env.reward_threshold, c='k', ls='--',
-                   label='Target reward')
+    axs[2].plot(episodic_data['episode_count'], episodic_data['reward_initial'],
+                'tab:green', label='Initial')
+    axs[2].plot(episodic_data['episode_count'], episodic_data['reward_final'],
+                c='tab:red', label='Final')
+    axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
     axs[2].axhline(env.get_max_reward(), c='k', label='Max. reward')
     axs[2].set_ylim(-0.05, 1.05)
 
@@ -183,6 +144,7 @@ def test_agent(env, agent, n_epochs=100, fig_title='Agent test'):
     :return: None
     """
     epoch_count = 0
+    env.clear_log()
     obs = env.reset()
     while epoch_count < n_epochs:
         action, _states = agent.predict(obs, deterministic=True)
@@ -192,3 +154,32 @@ def test_agent(env, agent, n_epochs=100, fig_title='Agent test'):
             obs = env.reset()
             epoch_count += 1
     plot_log(env, fig_title=fig_title)
+
+
+def calculate_performance_metrics(env: TargetSteeringEnv):
+    """ Define metric that characterizes performance of the agent
+    Option (I): we count how many times the agent manages to reach the target
+    without going above 'UB optimal behaviour' (i.e. max. number of steps
+    required assuming optimal behaviour).
+    Option (II): Take difference between initial and final reward and
+    divide by number of steps required.
+    I think option (II) gives a bit more detail, but we implement both. """
+    episodic_data = env.logger.extract_episodic_data()
+
+    # Option (I)
+    upper_bound_optimal = env.get_max_n_steps_optimal_behaviour()
+    msk_steps = episodic_data['episode_length'] < upper_bound_optimal
+    msk_reward = episodic_data['reward_final'] > env.reward_threshold
+    msk_nothing_to_do = episodic_data['episode_length'] == 0
+
+    n_success = np.sum(msk_steps & msk_reward & (~msk_nothing_to_do))
+    performance_metric_1 = n_success / float(np.sum(~msk_nothing_to_do))
+
+    # Option (II)
+    delta_reward = (episodic_data['reward_final'] -
+                    episodic_data['reward_initial'])
+    performance_metric_2 = np.mean(
+        delta_reward[~msk_nothing_to_do] /
+        episodic_data['episode_length'][~msk_nothing_to_do])
+
+    return {'metric_1': performance_metric_1, 'metric_2': performance_metric_2}
