@@ -61,6 +61,7 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
     :param fig_title: figure title
     :return: None
     """
+    env.clear_log()
     env.reset()
     episode_count = 0
     while episode_count < n_episodes:

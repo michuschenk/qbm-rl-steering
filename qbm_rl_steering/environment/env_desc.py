@@ -193,6 +193,11 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state
 
+    def clear_log(self):
+        """ Delete log / history of the environment. """
+        self.log_episode = []
+        self.log_all = []
+
     def _get_reward(self, beam_pos: float):
         """
         Calculate reward of environment state: reward is defined by integrated
