@@ -36,12 +36,6 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
             env.x_delta):
         ax1.axhline(i, color='black', ls='--', lw=0.5)
 
-    # for i in np.arange(
-    #         env.x_min - env.x_margin_discretisation,
-    #         env.x_max + env.x_margin_discretisation,
-    #         env.observation_bin_width):
-    #     ax1.axhline(i, color='g', ls='--', lw=0.5)
-
     ax1.set_xlabel('MSSB angle (rad)')
     ax1.set_ylabel('BPM pos. (m)')
 
@@ -120,9 +114,6 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
 
     # Episode abort reason
     axs[0].plot(episode, done_reason, 'tab:blue', ls='None', marker='.', ms=4)
-    # for key, val in env.done_reason_map.items():
-    #     axs[0].text(0, key, val, horizontalalignment='left',
-    #                 verticalalignment='center')
     axs[0].set_yticks([i for i in env.done_reason_map.keys()])
     axs[0].set_yticklabels([s for s in env.done_reason_map.values()],
                            rotation=45)
