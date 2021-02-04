@@ -102,12 +102,17 @@ class TargetSteeringEnv(gym.Env):
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
-        self.max_steps_per_epoch = 40
+        self.max_steps_per_epoch = 30
         self.reward_threshold = 0.9 * self._get_max_reward()
 
         # Logging
         self.log_all = []
         self.log_episode = []
+        self.done_reason_map = {
+            -1: '',
+            0: 'Max. # steps',
+            1: 'Reward thresh.',
+            2: 'State OOB'}
         self.debug = debug
 
     def step(self, action):
@@ -145,9 +150,21 @@ class TargetSteeringEnv(gym.Env):
             or x_new < (self.x_min - self.x_margin_abort_episode)
         )
 
-        # Keep history
-        self.log_episode.append([x_binary, action, reward, x_new_binary, done])
+        # Keep track of reason for episode abort
+        done_reason = -1
+        if self.step_count > self.max_steps_per_epoch:
+            done_reason = 0
+        elif reward > self.reward_threshold:
+            done_reason = 1
+        elif (x_new > (self.x_max + self.x_margin_abort_episode) or
+              x_new < (self.x_min - self.x_margin_abort_episode)):
+            done_reason = 2
+        else:
+            pass
 
+        # Log history
+        self.log_episode.append([x_binary, action, reward, x_new_binary,
+                                 done, done_reason])
         if done:
             self.log_all.append(self.log_episode)
 

@@ -97,32 +97,61 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     :return: None
     """
     log_all = np.array(env.log_all)
-    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 5))
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 7))
     fig.suptitle(fig_title)
 
-    # rewards correspond to intensity
+    # Rewards correspond to intensity
     reward_init = []
     reward_final = []
+    done_reason = []
     nb_steps = []
     for ep in range(len(log_all)):
         log_ep = log_all[ep]
         nb_steps.append(len(log_ep))
         reward_init.append(log_ep[0][2])
         reward_final.append(log_ep[-1][2])
+        done_reason.append(log_ep[-1][5])
 
     episode = np.arange(len(log_all))
     reward_init = np.array(reward_init)
     reward_final = np.array(reward_final)
     nb_steps = np.array(nb_steps)
+    done_reason = np.array(done_reason)
 
-    axs[0].plot(episode, nb_steps)
-    axs[1].plot(episode, reward_init, 'g', label='Initial')
-    axs[1].plot(episode, reward_final, 'b', label='Final')
-    axs[1].axhline(env._get_max_reward(), c='r', ls='--', label='Target')
+    # Episode abort reason
+    axs[0].plot(episode, done_reason, 'tab:blue', ls='None', marker='.', ms=4)
+    # for key, val in env.done_reason_map.items():
+    #     axs[0].text(0, key, val, horizontalalignment='left',
+    #                 verticalalignment='center')
+    axs[0].set_yticks([i for i in env.done_reason_map.keys()])
+    axs[0].set_yticklabels([s for s in env.done_reason_map.values()],
+                           rotation=45)
+    axs[0].set_ylim(-0.5, max(env.done_reason_map.keys()) + 0.5)
 
-    axs[0].set_ylabel('Nb. steps')
-    axs[1].set_ylabel('Reward')
-    axs[1].legend(loc='lower left')
+    # Episode length
+    axs[1].plot(episode, nb_steps, c='tab:blue')
+    axs[1].axhline(env.max_steps_per_epoch, c='k',
+                   label='Max. # steps')
+    optimal_upper_bound = np.ceil(
+        ((env.x_max - env.x_min) / env.x_delta - 1) / 2.)
+    axs[1].axhline(optimal_upper_bound, c='k', ls='--',
+                   label='UB optimal behaviour')
+    axs[1].set_ylim(0, 1.1*env.max_steps_per_epoch)
+
+    # Reward
+    axs[2].plot(episode, reward_init, 'tab:green', label='Initial')
+    axs[2].plot(episode, reward_final, 'tab:red', label='Final')
+    axs[2].axhline(env.reward_threshold, c='k', ls='--',
+                   label='Target reward')
+    axs[2].axhline(env._get_max_reward(), c='k', label='Max. reward')
+    axs[2].set_ylim(-0.05, 1.05)
+
+    axs[0].set_ylabel('Abort reason')
+    axs[1].set_ylabel('# steps per episode')
+    axs[2].set_ylabel('Reward')
+
+    axs[1].legend(loc='upper left', fontsize=10)
+    axs[2].legend(loc='lower left', fontsize=10)
     axs[-1].set_xlabel('Episode')
     plt.tight_layout()
     plt.show()
