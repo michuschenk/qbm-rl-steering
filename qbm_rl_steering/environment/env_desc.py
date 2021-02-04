@@ -54,9 +54,9 @@ class TargetSteeringEnv(gym.Env):
 
         # MSSB (dipole) kicker
         self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -150e-6
-        self.mssb_angle_max = 150e-6
-        self.mssb_delta = 2e-5  # discrete action step (rad)
+        self.mssb_angle_min = -160e-6
+        self.mssb_angle_max = 160e-6
+        self.mssb_delta = 3e-5  # discrete action step (rad)
 
         # Beam position
         self.x0 = 0.
@@ -102,8 +102,8 @@ class TargetSteeringEnv(gym.Env):
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
-        self.max_steps_per_epoch = 25
-        self.reward_threshold = 0.95
+        self.max_steps_per_epoch = 40
+        self.reward_threshold = 0.9 * self._get_max_reward()
 
         # Logging
         self.log_all = []
@@ -255,3 +255,13 @@ class TargetSteeringEnv(gym.Env):
              self.x_min - self.x_margin_discretisation)
         return x
 
+    def _get_max_reward(self):
+        """ Calculate maximum reward. This is used to define the threshold
+        for cancellation of an episode. Note that in reality this is usually
+        not known. """
+        angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 200)
+        max_r = -1.
+        for i, ang in enumerate(angles):
+            _, r = self._get_pos_at_bpm_target(total_angle=ang)
+            max_r = max(r, max_r)
+        return max_r
