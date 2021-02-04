@@ -70,14 +70,14 @@ class TargetSteeringEnv(gym.Env):
                                    2.398031982)
 
         # Get possible range of observations to define observation_space
-        self.x_max, _ = self._get_pos_at_bpm_target(self.mssb_angle_max)
-        self.x_min, _ = self._get_pos_at_bpm_target(self.mssb_angle_min)
+        self.x_max, _ = self.get_pos_at_bpm_target(self.mssb_angle_max)
+        self.x_min, _ = self.get_pos_at_bpm_target(self.mssb_angle_min)
 
         # find change in x for change mssb_delta in dipole to define the
         # threshold for canceling an episode and to define the discretization
         # range required (the latter has to be larger than the former by at
         # least x_delta)
-        x_min_plus_delta, _ = self._get_pos_at_bpm_target(
+        x_min_plus_delta, _ = self.get_pos_at_bpm_target(
             self.mssb_angle_min + self.mssb_delta)
         x_delta = x_min_plus_delta - self.x_min
         self.x_delta = x_delta
@@ -103,7 +103,7 @@ class TargetSteeringEnv(gym.Env):
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
         self.max_steps_per_epoch = 30
-        self.reward_threshold = 0.9 * self._get_max_reward()
+        self.reward_threshold = 0.9 * self.get_max_reward()
 
         # Logging
         self.log_all = []
@@ -127,7 +127,7 @@ class TargetSteeringEnv(gym.Env):
         # Apply action and update environment
         action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
         total_angle = self.mssb_angle + action_map[action]
-        x_new, reward = self._get_pos_at_bpm_target(total_angle)
+        x_new, reward = self.get_pos_at_bpm_target(total_angle)
         x_new_binary = self._make_state_discrete_binary(x_new)
         self.state = x_new_binary
         self.mssb_angle = total_angle
@@ -176,7 +176,7 @@ class TargetSteeringEnv(gym.Env):
         idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
         idx = np.random.randint(idx_max)
         self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
-        x_init, _ = self._get_pos_at_bpm_target(self.mssb_angle)
+        x_init, _ = self.get_pos_at_bpm_target(self.mssb_angle)
 
         x_init_binary = self._make_state_discrete_binary(x_init)
         self.state = x_init_binary
@@ -211,7 +211,7 @@ class TargetSteeringEnv(gym.Env):
         reward = self.intensity_on_target[0]
         return reward
 
-    def _get_pos_at_bpm_target(self, total_angle: float) -> (float, float):
+    def get_pos_at_bpm_target(self, total_angle: float) -> (float, float):
         """
         Transports beam through the transfer line and calculates the position at
         the BPM and at the target. These are required for the reward
@@ -267,13 +267,20 @@ class TargetSteeringEnv(gym.Env):
              self.x_min - self.x_margin_discretisation)
         return x
 
-    def _get_max_reward(self):
+    def get_max_reward(self):
         """ Calculate maximum reward. This is used to define the threshold
         for cancellation of an episode. Note that in reality this is usually
         not known. """
         angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 200)
         max_r = -1.
         for i, ang in enumerate(angles):
-            _, r = self._get_pos_at_bpm_target(total_angle=ang)
+            _, r = self.get_pos_at_bpm_target(total_angle=ang)
             max_r = max(r, max_r)
         return max_r
+
+    def get_max_n_steps_optimal_behaviour(self):
+        """
+        :return: maximum number of steps required to solve the problem from any
+        initial condition assuming optimal behaviour of agent.
+        """
+        return np.ceil(self.x_max / self.x_delta - 1)
