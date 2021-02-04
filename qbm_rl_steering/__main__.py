@@ -19,16 +19,17 @@ if __name__ == "__main__":
 
     # DQN: state and action is discrete: see here:
     # https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html
-    policy_kwargs = dict(net_arch=[128, 64, 32])
-    agent = DQN('MlpPolicy', my_env, verbose=1, learning_starts=4000,
-                policy_kwargs=policy_kwargs)
+    policy_kwargs = dict(net_arch=[128, 128])
+    agent = DQN('MlpPolicy', my_env, verbose=1, learning_starts=0,
+                policy_kwargs=policy_kwargs, exploration_fraction=0.5,
+                exploration_initial_eps=1.0, exploration_final_eps=0.)
 
     # Agent test before learning
     hlp.test_agent(
         my_env, agent, n_epochs=200, fig_title='Agent test before training')
 
     # Run RL and plot log
-    agent.learn(total_timesteps=8000)
+    agent.learn(total_timesteps=2000)
     hlp.plot_log(my_env, fig_title='Agent training')
     agent.save('dqn_transferline')
     del agent  # remove to demonstrate saving and loading
