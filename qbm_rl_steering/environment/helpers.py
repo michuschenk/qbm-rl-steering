@@ -18,32 +18,33 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
         x_bpm[i] = x
         rewards[i] = r
 
-    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(5, 4))
+    fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
-    l1, = axs[0].plot(angles, x_bpm, 'b')
+    l1, = ax1.plot(1e6*angles, 1e3*x_bpm, 'tab:blue')
 
-    axs[0].axhline(env.x_min - env.x_margin_abort_episode, color='grey')
-    axs[0].axhline(env.x_min - env.x_margin_discretisation, color='black')
+    ax1.axhline(1e3*(env.x_min - env.x_margin_abort_episode), color='grey')
+    ax1.axhline(1e3*(env.x_min - env.x_margin_discretisation), color='black')
 
-    l11 = axs[0].axhline(env.x_max + env.x_margin_abort_episode, color='grey')
-    l12 = axs[0].axhline(env.x_max + env.x_margin_discretisation, color='black')
+    l11 = ax1.axhline(1e3*(env.x_max + env.x_margin_abort_episode),
+                      color='grey')
+    l12 = ax1.axhline(1e3*(env.x_max + env.x_margin_discretisation),
+                      color='black')
 
-    axs[0].set_xlabel('MSSB angle (rad)')
-    axs[0].set_ylabel('BPM pos. (m)')
+    ax1.set_xlabel('MSSB angle (urad)')
+    ax1.set_ylabel('BPM pos. (mm)')
 
-    ax2 = axs[0].twinx()
-    l2, = ax2.plot(angles, rewards, 'r')
+    ax2 = ax1.twinx()
+    l2, = ax2.plot(1e6*angles, rewards, c='tab:red')
     ax2.set_ylabel('Reward')
 
     plt.legend((l1, l11, l12, l2),
-               ('BPM pos.', 'Margin episode abort',
-                'Margin discretisation', 'Reward'),
-               loc='upper left')
+               ('BPM pos.', 'Episode abort', 'Discretisation', 'Reward'),
+               loc='upper left', fontsize=10)
     plt.tight_layout()
     plt.show()
 
 
-def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
+def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
                             fig_title: str = '') -> None:
     """ Test the environment, create trajectories, use reset, etc. using random
     actions.
@@ -64,13 +65,16 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 5,
 
     # Extract all data and convert binary states to floats
     data, n_steps = env.logger.extract_all_data()
-    for i, s in enumerate(data['state']):
-        data['state'][i] = env.make_binary_state_float(s)
+    state_float = []
+    for s in data['state']:
+        state_float.append(env.make_binary_state_float(s))
+    state_float = np.array(state_float)
+    data['state_float'] = state_float
 
     # Plot
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 6))
     fig.suptitle(fig_title)
-    axs[0].plot(data['state'])
+    axs[0].plot(data['state_float'])
     axs[1].plot(data['action'])
     axs[2].plot(data['reward'])
 
@@ -135,7 +139,8 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     plt.show()
 
 
-def test_agent(env, agent, n_epochs=100, fig_title='Agent test'):
+def evaluate_agent(env, agent, n_epochs=100, make_plot=False,
+                   fig_title='Agent test'):
     """ Run agent for a number of epochs on environment and plot log.
     :param env: openAI gym environment
     :param agent: agent (trained or untrained)
@@ -153,7 +158,8 @@ def test_agent(env, agent, n_epochs=100, fig_title='Agent test'):
         if done:
             obs = env.reset()
             epoch_count += 1
-    plot_log(env, fig_title=fig_title)
+    if make_plot:
+        plot_log(env, fig_title=fig_title)
 
 
 def calculate_performance_metrics(env: TargetSteeringEnv):
@@ -173,13 +179,13 @@ def calculate_performance_metrics(env: TargetSteeringEnv):
     msk_nothing_to_do = episodic_data['episode_length'] == 0
 
     n_success = np.sum(msk_steps & msk_reward & (~msk_nothing_to_do))
-    performance_metric_1 = n_success / float(np.sum(~msk_nothing_to_do))
+    metric_1 = n_success / float(np.sum(~msk_nothing_to_do))
 
     # Option (II)
     delta_reward = (episodic_data['reward_final'] -
                     episodic_data['reward_initial'])
-    performance_metric_2 = np.mean(
+    metric_2 = np.mean(
         delta_reward[~msk_nothing_to_do] /
         episodic_data['episode_length'][~msk_nothing_to_do])
 
-    return {'metric_1': performance_metric_1, 'metric_2': performance_metric_2}
+    return metric_1, metric_2
