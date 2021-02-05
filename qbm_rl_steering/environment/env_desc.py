@@ -242,7 +242,7 @@ class TargetSteeringEnv(gym.Env):
         binary_string = format(bin_idx, binary_fmt)
 
         # Convert binary_string to list
-        x_binary = [int(i) for i in binary_string]
+        x_binary = np.array([int(i) for i in binary_string])
         return x_binary
 
     def _make_state_discrete(self, x):
