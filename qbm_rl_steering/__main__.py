@@ -22,7 +22,7 @@ def test_environment():
     return env
 
 
-def init_agent(env, scan_params={}):
+def init_agent(env, scan_params=None):
     """ Initialize an agent for training.
     :param env: openAI gym environment.
     :param scan_params: dictionary with additional keyword arguments for DQN
@@ -33,11 +33,15 @@ def init_agent(env, scan_params={}):
         policy='MlpPolicy', env=env, verbose=0, learning_starts=0,
         policy_kwargs=policy_kwargs, exploration_initial_eps=1.0,
         exploration_final_eps=0., exploration_fraction=0.5)
-    dqn_kwargs.update(scan_params)
+
+    # Update dqn_kwargs dictionary by adding (or replacing) scan parameters.
+    if scan_params is not None:
+        dqn_kwargs.update(scan_params)
+
     return DQN(**dqn_kwargs)
 
 
-def evaluate_performance(n_evaluations=30, n_steps_train=2000,
+def evaluate_performance(n_evaluations=4, n_steps_train=2000,
                          n_epochs_test=1000, max_steps_per_epoch=30,
                          scan_params=None, make_plots=False):
     """ Evaluate performance of agent for the scan parameter.
@@ -52,7 +56,9 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
         print('Running performance test with default parameters')
 
     metrics = np.zeros((2, n_evaluations))
-    for j in tqdm(range(n_evaluations), ncols=80, position=0):
+    tqdm_pbar = tqdm(range(n_evaluations), ncols=80, position=0,
+                     desc='Evaluations: ', leave=False)
+    for j in tqdm_pbar:
         # Run agent training
         env = TargetSteeringEnv(
             N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
@@ -96,7 +102,8 @@ if __name__ == "__main__":
     metrics_avg = np.zeros((2, len(scan_values)))
     metrics_std = np.zeros((2, len(scan_values)))
 
-    for i, val in enumerate(tqdm(scan_values, ncols=80, position=1)):
+    for i, val in enumerate(
+            tqdm(scan_values, ncols=80, position=1, desc='Total: ')):
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=dict(
                 exploration_fraction=0.8,
