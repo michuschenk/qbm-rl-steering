@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import progressbar as pb
+from tqdm import tqdm
 
 from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
@@ -52,7 +52,7 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
         print('Running performance test with default parameters')
 
     metrics = np.zeros((2, n_evaluations))
-    for i in range(n_evaluations):
+    for j in tqdm(range(n_evaluations), ncols=80, position=0):
         # Run agent training
         env = TargetSteeringEnv(
             N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
@@ -75,7 +75,7 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
             make_plot=make_plots, fig_title='Agent test after training')
 
         # Calculate performance metrics
-        metrics[:, i] = hlp.calculate_performance_metrics(env)
+        metrics[:, j] = hlp.calculate_performance_metrics(env)
 
     metrics_avg = np.mean(metrics, axis=1)
     metrics_std = np.std(metrics, axis=1) / np.sqrt(n_evaluations)
@@ -89,20 +89,19 @@ if __name__ == "__main__":
     # Parameter scan
     # scan_values = np.arange(0., 1.1, 0.1)  # exploration_fraction
     # scan_values = np.array([1, 2, 3])  # number of hidden layers q_net
-    # scan_values = np.arange(200, 3300, 500)  # number of training steps
+    scan_values = np.arange(200, 3300, 500)  # number of training steps
     # scan_values = np.arange(500, 3100, 500)  # target_update_interval
     # scan_values = np.arange(10, 45, 5)  # max_steps_per_epoch
-    scan_values = np.array([32, 64, 128, 256])  # #nodes in hidden layers
+    # scan_values = np.array([32, 64, 128, 256])  # #nodes in hidden layers
     metrics_avg = np.zeros((2, len(scan_values)))
     metrics_std = np.zeros((2, len(scan_values)))
 
-    pbar = pb.progressbar
-    for i, val in pbar(enumerate(scan_values)):
+    for i, val in enumerate(tqdm(scan_values, ncols=80, position=1)):
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=dict(
                 exploration_fraction=0.8,
-                policy_kwargs=dict(net_arch=[val]*3)),
-            n_steps_train=2200, max_steps_per_epoch=30)
+                policy_kwargs=dict(net_arch=[128]*3)),
+            n_steps_train=val, max_steps_per_epoch=15)
 
     fig = plt.figure(1, figsize=(7, 5.5))
     fig.suptitle('Performance evaluation')
@@ -114,10 +113,10 @@ if __name__ == "__main__":
         cap.set_color('tab:red')
         cap.set_markeredgewidth(2)
     # ax1.set_xlabel('exploration_fraction')
-    # ax1.set_xlabel('n_steps_train')
+    ax1.set_xlabel('n_steps_train')
     # ax1.set_xlabel('target_update_interval')
     # ax1.set_xlabel('max_steps_per_epoch')
-    ax1.set_xlabel('net_arch, nodes')
+    # ax1.set_xlabel('net_arch, nodes')
     # ax1.set_xlabel('net_arch, layers')
     ax1.set_ylabel('Fraction of successes')
     ax1.set_ylim(-0.05, 1.05)
