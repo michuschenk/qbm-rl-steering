@@ -39,10 +39,12 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 
 class TargetSteeringEnv(gym.Env):
-    def __init__(self, n_bits_observation_space=8, debug=False):
+    def __init__(self, n_bits_observation_space=8, max_steps_per_epoch=30,
+                 debug=False):
         """
         :param n_bits_observation_space: number of bits used to represent the
         observation space (now discrete)
+        :param max_steps_per_epoch: max number of steps per epoch
 
         x0: beam position at origin, i.e. before entering MSSB
         state: beam position at BPM (observation / state)
@@ -103,7 +105,7 @@ class TargetSteeringEnv(gym.Env):
 
         # For cancellation when beyond certain number of steps in an epoch
         self.step_count = None
-        self.max_steps_per_epoch = 30
+        self.max_steps_per_epoch = max_steps_per_epoch
         self.reward_threshold = 0.9 * self.get_max_reward()
 
         # Logging

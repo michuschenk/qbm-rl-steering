@@ -26,7 +26,7 @@ def init_agent(env, scan_params={}):
     """ Initialize an agent for training.
     :param env: openAI gym environment.
     :param scan_params: dictionary with additional keyword arguments for DQN
-    or arguments to overwrite.
+    or arguments to overwrite (this can also be overwriting the policy_kwargs)
     :returns new instance of environment and agent with given arguments. """
     policy_kwargs = dict(net_arch=[128, 128])
     dqn_kwargs = dict(
@@ -37,13 +37,14 @@ def init_agent(env, scan_params={}):
     return DQN(**dqn_kwargs)
 
 
-def evaluate_performance(n_evaluations=20, n_steps_train=2000,
-                         n_epochs_test=500, scan_params=None,
-                         make_plots=False):
+def evaluate_performance(n_evaluations=30, n_steps_train=2000,
+                         n_epochs_test=1000, max_steps_per_epoch=30,
+                         scan_params=None, make_plots=False):
     """ Evaluate performance of agent for the scan parameter.
     :param n_evaluations: number of full trainings of the agent
     :param n_steps_train: number of training steps per evaluation
     :param n_epochs_test: number of epochs to evaluate performance
+    :param max_steps_per_epoch: number of steps per epoch (abort criterion)
     :param scan_params: dictionary of parameters that we scan
     :return: average and std. dev of performance metrics.
     """
@@ -53,7 +54,8 @@ def evaluate_performance(n_evaluations=20, n_steps_train=2000,
     metrics = np.zeros((2, n_evaluations))
     for i in range(n_evaluations):
         # Run agent training
-        env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE)
+        env = TargetSteeringEnv(
+            N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
         agent = init_agent(env, scan_params)
         agent.learn(total_timesteps=n_steps_train)
 
@@ -65,7 +67,8 @@ def evaluate_performance(n_evaluations=20, n_steps_train=2000,
                            fig_title='Agent test before training')
 
         # Run agent evaluation
-        test_env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE)
+        test_env = TargetSteeringEnv(
+            N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
         test_agent = DQN.load('dqn_transferline')
         hlp.evaluate_agent(
             test_env, test_agent, n_epochs=n_epochs_test,
@@ -84,14 +87,22 @@ if __name__ == "__main__":
     # env = test_environment()
 
     # Parameter scan
-    scan_values = np.arange(0., 1.1, 0.1)
+    # scan_values = np.arange(0., 1.1, 0.1)  # exploration_fraction
+    # scan_values = np.array([1, 2, 3])  # number of hidden layers q_net
+    # scan_values = np.arange(200, 3300, 500)  # number of training steps
+    # scan_values = np.arange(500, 3100, 500)  # target_update_interval
+    # scan_values = np.arange(10, 45, 5)  # max_steps_per_epoch
+    scan_values = np.array([32, 64, 128, 256])  # #nodes in hidden layers
     metrics_avg = np.zeros((2, len(scan_values)))
     metrics_std = np.zeros((2, len(scan_values)))
 
     pbar = pb.progressbar
     for i, val in pbar(enumerate(scan_values)):
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
-            scan_params=dict(exploration_fraction=val))
+            scan_params=dict(
+                exploration_fraction=0.8,
+                policy_kwargs=dict(net_arch=[val]*3)),
+            n_steps_train=2200, max_steps_per_epoch=30)
 
     fig = plt.figure(1, figsize=(7, 5.5))
     fig.suptitle('Performance evaluation')
@@ -102,34 +113,13 @@ if __name__ == "__main__":
     for cap in caps:
         cap.set_color('tab:red')
         cap.set_markeredgewidth(2)
-    ax1.set_xlabel('exploration_fraction')
+    # ax1.set_xlabel('exploration_fraction')
+    # ax1.set_xlabel('n_steps_train')
+    # ax1.set_xlabel('target_update_interval')
+    # ax1.set_xlabel('max_steps_per_epoch')
+    ax1.set_xlabel('net_arch, nodes')
+    # ax1.set_xlabel('net_arch, layers')
     ax1.set_ylabel('Fraction of successes')
     ax1.set_ylim(-0.05, 1.05)
     plt.tight_layout()
     plt.show()
-
-    # fig = plt.figure(1, figsize=(7, 5))
-    # fig.suptitle('Performance evaluation')
-    # ax1 = plt.gca()
-    # ax2 = ax1.twinx()
-    # axs = [ax1, ax2]
-    # cols = ['tab:blue', 'tab:red']
-    # labels = []
-    # handles = []
-    # for m in range(1):
-    #     (h, caps, _) = axs[m].errorbar(
-    #         x=scan_values, y=metrics_avg[m, :], yerr=metrics_std[m, :],
-    #         c=cols[m], capsize=4, elinewidth=2)
-    #
-    #     for cap in caps:
-    #         cap.set_color(cols[m])
-    #         cap.set_markeredgewidth(2)
-    #     labels.append(f'metric {m+1}')
-    #     handles.append(h)
-    #     axs[m].set_ylabel(f'Metric {m+1}')
-    #
-    # axs[0].set_xlabel('exploration_fraction')
-    # axs[0].set_ylim(-0.1, 1.1)
-    # plt.legend(handles, labels)
-    # plt.tight_layout()
-    # plt.show()
