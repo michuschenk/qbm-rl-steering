@@ -41,7 +41,7 @@ def init_agent(env, scan_params=None):
     return DQN(**dqn_kwargs)
 
 
-def evaluate_performance(n_evaluations=4, n_steps_train=2000,
+def evaluate_performance(n_evaluations=30, n_steps_train=2000,
                          n_epochs_test=1000, max_steps_per_epoch=30,
                          scan_params=None, make_plots=False):
     """ Evaluate performance of agent for the scan parameter.
@@ -59,20 +59,24 @@ def evaluate_performance(n_evaluations=4, n_steps_train=2000,
     tqdm_pbar = tqdm(range(n_evaluations), ncols=80, position=0,
                      desc='Evaluations: ', leave=False)
     for j in tqdm_pbar:
-        # Run agent training
+        # Initialize environment and agent
         env = TargetSteeringEnv(
             N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
         agent = init_agent(env, scan_params)
-        agent.learn(total_timesteps=n_steps_train)
 
-        if make_plots:
-            hlp.plot_log(env, fig_title='Agent training')
-        agent.save('dqn_transferline')
+        # Evaluate agent before training
         hlp.evaluate_agent(env, agent, n_epochs=n_epochs_test,
                            make_plot=make_plots,
                            fig_title='Agent test before training')
 
-        # Run agent evaluation
+        # Run agent training
+        agent.learn(total_timesteps=n_steps_train)
+        if make_plots:
+            hlp.plot_log(env, fig_title='Agent training')
+
+        agent.save('dqn_transferline')
+
+        # Run evaluation of trained agent
         test_env = TargetSteeringEnv(
             N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
         test_agent = DQN.load('dqn_transferline')
@@ -95,10 +99,11 @@ if __name__ == "__main__":
     # Parameter scan
     # scan_values = np.arange(0., 1.1, 0.1)  # exploration_fraction
     # scan_values = np.array([1, 2, 3])  # number of hidden layers q_net
-    scan_values = np.arange(200, 3300, 500)  # number of training steps
+    # scan_values = np.arange(200, 3300, 500)  # number of training steps
     # scan_values = np.arange(500, 3100, 500)  # target_update_interval
     # scan_values = np.arange(10, 45, 5)  # max_steps_per_epoch
     # scan_values = np.array([32, 64, 128, 256])  # #nodes in hidden layers
+    scan_values = np.array([2200])
     metrics_avg = np.zeros((2, len(scan_values)))
     metrics_std = np.zeros((2, len(scan_values)))
 
@@ -108,7 +113,8 @@ if __name__ == "__main__":
             scan_params=dict(
                 exploration_fraction=0.8,
                 policy_kwargs=dict(net_arch=[128]*3)),
-            n_steps_train=val, max_steps_per_epoch=15)
+            n_steps_train=val, max_steps_per_epoch=30, make_plots=True,
+            n_evaluations=1)
 
     fig = plt.figure(1, figsize=(7, 5.5))
     fig.suptitle('Performance evaluation')
