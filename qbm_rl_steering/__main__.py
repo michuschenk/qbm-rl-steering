@@ -85,7 +85,7 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
             make_plot=make_plots, fig_title='Agent test after training')
 
         # Calculate performance metrics
-        metrics[:, j] = hlp.calculate_performance_metrics(env)
+        metrics[:, j] = hlp.calculate_performance_metrics(test_env)
 
     metrics_avg = np.mean(metrics, axis=1)
     metrics_std = np.std(metrics, axis=1) / np.sqrt(n_evaluations)
@@ -96,41 +96,46 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
 if __name__ == "__main__":
     # env = test_environment()
 
-    # Parameter scan
-    # scan_values = np.arange(0., 1.1, 0.1)  # exploration_fraction
-    # scan_values = np.array([1, 2, 3])  # number of hidden layers q_net
-    # scan_values = np.arange(200, 3300, 500)  # number of training steps
-    # scan_values = np.arange(500, 3100, 500)  # target_update_interval
-    # scan_values = np.arange(10, 45, 5)  # max_steps_per_epoch
-    # scan_values = np.array([32, 64, 128, 256])  # #nodes in hidden layers
-    scan_values = np.array([2200])
+    # Scenarios for parameter scans
+    scan_scenarios = {
+        'exploration_fraction': np.arange(0., 1.1, 0.1),
+        'n_steps_train': np.arange(200, 3300, 500),
+        'target_update_interval': np.arange(500, 3100, 500),
+        'max_steps_per_epoch': np.arange(10, 45, 5),
+        'gamma': np.arange(0.9, 0.991, 0.02),
+        'net_arch_layer_nodes': np.array([32, 64, 128, 256]),
+        'net_arch_hidden_layers': np.array([1, 2, 3])
+    }
+    scenario = 'gamma'
+    scan_values = scan_scenarios[scenario]
+
+    # Run the scan (adapt the correct kwarg)
     metrics_avg = np.zeros((2, len(scan_values)))
     metrics_std = np.zeros((2, len(scan_values)))
 
-    for i, val in enumerate(
-            tqdm(scan_values, ncols=80, position=1, desc='Total: ')):
+    tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
+    for i, val in enumerate(tqdm_scan_values):
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=dict(
                 exploration_fraction=0.8,
-                policy_kwargs=dict(net_arch=[128]*3)),
-            n_steps_train=val, max_steps_per_epoch=30, make_plots=True,
-            n_evaluations=1)
+                policy_kwargs=dict(net_arch=[128]*3),
+                gamma=val),
+            n_steps_train=2200, max_steps_per_epoch=30, make_plots=False,
+            n_evaluations=30)
 
+    # Final plot
     fig = plt.figure(1, figsize=(7, 5.5))
     fig.suptitle('Performance evaluation')
     ax1 = plt.gca()
     (h, caps, _) = ax1.errorbar(
         x=scan_values, y=metrics_avg[0, :], yerr=metrics_std[0, :],
         c='tab:red', capsize=4, elinewidth=2)
+
     for cap in caps:
         cap.set_color('tab:red')
         cap.set_markeredgewidth(2)
-    # ax1.set_xlabel('exploration_fraction')
-    ax1.set_xlabel('n_steps_train')
-    # ax1.set_xlabel('target_update_interval')
-    # ax1.set_xlabel('max_steps_per_epoch')
-    # ax1.set_xlabel('net_arch, nodes')
-    # ax1.set_xlabel('net_arch, layers')
+
+    ax1.set_xlabel(scenario)
     ax1.set_ylabel('Fraction of successes')
     ax1.set_ylim(-0.05, 1.05)
     plt.tight_layout()
