@@ -18,7 +18,8 @@ def test_environment():
     env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE)
     check_env(env)
     hlp.plot_response(env, fig_title='Env. test: response function')
-    hlp.run_random_trajectories(env, fig_title='Env test: random trajectories')
+    hlp.run_random_trajectories(
+        env, fig_title='Env test: random trajectories', n_episodes=15)
     return env
 
 
@@ -42,13 +43,13 @@ def init_agent(env, scan_params=None):
 
 
 def evaluate_performance(n_evaluations=30, n_steps_train=2000,
-                         n_epochs_test=1000, max_steps_per_epoch=30,
+                         n_episodes_test=1000, max_steps_per_episode=20,
                          scan_params=None, make_plots=False):
     """ Evaluate performance of agent for the scan parameter.
     :param n_evaluations: number of full trainings of the agent
     :param n_steps_train: number of training steps per evaluation
-    :param n_epochs_test: number of epochs to evaluate performance
-    :param max_steps_per_epoch: number of steps per epoch (abort criterion)
+    :param n_episodes_test: number of episodes to evaluate performance
+    :param max_steps_per_episode: number of steps per episode (abort criterion)
     :param scan_params: dictionary of parameters that we scan
     :return: average and std. dev of performance metrics.
     """
@@ -61,11 +62,12 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
     for j in tqdm_pbar:
         # Initialize environment and agent
         env = TargetSteeringEnv(
-            N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
+            N_BITS_OBSERVATION_SPACE,
+            max_steps_per_episode=max_steps_per_episode)
         agent = init_agent(env, scan_params)
 
         # Evaluate agent before training
-        hlp.evaluate_agent(env, agent, n_epochs=n_epochs_test,
+        hlp.evaluate_agent(env, agent, n_episodes=n_episodes_test,
                            make_plot=make_plots,
                            fig_title='Agent test before training')
 
@@ -78,10 +80,11 @@ def evaluate_performance(n_evaluations=30, n_steps_train=2000,
 
         # Run evaluation of trained agent
         test_env = TargetSteeringEnv(
-            N_BITS_OBSERVATION_SPACE, max_steps_per_epoch=max_steps_per_epoch)
+            N_BITS_OBSERVATION_SPACE,
+            max_steps_per_episode=max_steps_per_episode)
         test_agent = DQN.load('dqn_transferline')
         hlp.evaluate_agent(
-            test_env, test_agent, n_epochs=n_epochs_test,
+            test_env, test_agent, n_episodes=n_episodes_test,
             make_plot=make_plots, fig_title='Agent test after training')
 
         # Calculate performance metrics
@@ -101,12 +104,13 @@ if __name__ == "__main__":
         'exploration_fraction': np.arange(0., 1.1, 0.1),
         'n_steps_train': np.arange(200, 3300, 500),
         'target_update_interval': np.arange(500, 3100, 500),
-        'max_steps_per_epoch': np.arange(10, 45, 5),
+        'max_steps_per_episode': np.arange(10, 45, 5),
         'gamma': np.arange(0.9, 0.991, 0.02),
         'net_arch_layer_nodes': np.array([32, 64, 128, 256]),
-        'net_arch_hidden_layers': np.array([1, 2, 3])
+        'net_arch_hidden_layers': np.array([1, 2, 3]),
+        'single_default': np.array([1])
     }
-    scenario = 'gamma'
+    scenario = 'single_default'
     scan_values = scan_scenarios[scenario]
 
     # Run the scan (adapt the correct kwarg)
@@ -119,9 +123,9 @@ if __name__ == "__main__":
             scan_params=dict(
                 exploration_fraction=0.8,
                 policy_kwargs=dict(net_arch=[128]*3),
-                gamma=val),
-            n_steps_train=2200, max_steps_per_epoch=30, make_plots=False,
-            n_evaluations=30)
+                gamma=0.99),
+            n_steps_train=2200, max_steps_per_episode=20, make_plots=True,
+            n_evaluations=val)
 
     # Final plot
     fig = plt.figure(1, figsize=(7, 5.5))

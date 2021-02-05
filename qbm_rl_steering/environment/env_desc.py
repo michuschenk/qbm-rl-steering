@@ -12,8 +12,7 @@ class TwissElement:
         :param beta: beta Twiss function value at element
         :param alpha: alpha Twiss function value at element
         :param d: ?
-        :param mu: phase advance
-        """
+        :param mu: phase advance """
         self.beta = beta
         self.alpha = alpha
         self.mu = mu
@@ -39,12 +38,12 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 
 class TargetSteeringEnv(gym.Env):
-    def __init__(self, n_bits_observation_space=8, max_steps_per_epoch=30,
+    def __init__(self, n_bits_observation_space=8, max_steps_per_episode=20,
                  debug=False):
         """
         :param n_bits_observation_space: number of bits used to represent the
         observation space (now discrete)
-        :param max_steps_per_epoch: max number of steps per epoch
+        :param max_steps_per_episode: max number of steps per episode
 
         x0: beam position at origin, i.e. before entering MSSB
         state: beam position at BPM (observation / state)
@@ -103,9 +102,9 @@ class TargetSteeringEnv(gym.Env):
             2**n_bits_observation_space)
         self.n_bits_observation_space = n_bits_observation_space
 
-        # For cancellation when beyond certain number of steps in an epoch
+        # For cancellation when beyond certain number of steps in an episode
         self.step_count = None
-        self.max_steps_per_epoch = max_steps_per_epoch
+        self.max_steps_per_episode = max_steps_per_episode
         self.reward_threshold = 0.9 * self.get_max_reward()
 
         # Logging
@@ -115,7 +114,6 @@ class TargetSteeringEnv(gym.Env):
     def step(self, action):
         """ Action is discrete here and is an integer number in set {0, 1, 2}.
         Action_map shows how action is mapped to change of self.mssb_angle. """
-
         err_msg = f"{action} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
 
@@ -140,7 +138,7 @@ class TargetSteeringEnv(gym.Env):
 
         # Episode done?
         done = bool(
-            self.step_count > self.max_steps_per_epoch
+            self.step_count > self.max_steps_per_episode
             or reward > self.reward_threshold
             or x_new > (self.x_max + self.x_margin_abort_episode)
             or x_new < (self.x_min - self.x_margin_abort_episode)
@@ -148,7 +146,7 @@ class TargetSteeringEnv(gym.Env):
 
         # Keep track of reason for episode abort
         done_reason = -1
-        if self.step_count > self.max_steps_per_epoch:
+        if self.step_count > self.max_steps_per_episode:
             done_reason = 0
         elif reward > self.reward_threshold:
             done_reason = 1
@@ -199,8 +197,7 @@ class TargetSteeringEnv(gym.Env):
         intensity on target (assuming Gaussian beam, integration range +/- 3
         sigma.
         :param beam_pos: beam position on target (not known to RL agent)
-        :return: reward, float in [0, 1].
-        """
+        :return: reward, float in [0, 1]. """
         emittance = 1.1725E-08
         sigma = math.sqrt(self.target.beta * emittance)
         self.intensity_on_target = quad(
@@ -217,8 +214,7 @@ class TargetSteeringEnv(gym.Env):
         the BPM and at the target. These are required for the reward
         calculation.
         :param total_angle: total kick angle from the MSSB dipole (rad)
-        :return: position at BPM and reward as a tuple
-        """
+        :return: position at BPM and reward as a tuple """
         x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
         x_target, px_target = transport(
             self.mssb, self.target, self.x0, total_angle)
@@ -231,8 +227,7 @@ class TargetSteeringEnv(gym.Env):
         convert to binary format.
         :param x: input BPM position (float), to be converted to binary
         :return x_binary: list of length self.n_bits_observation
-        encoding the state in discrete, binary format.
-        """
+        encoding the state in discrete, binary format. """
         bin_idx = self._make_state_discrete(x)
 
         # Make sure that we never go above or below range available in binary
@@ -250,8 +245,7 @@ class TargetSteeringEnv(gym.Env):
     def _make_state_discrete(self, x):
         """ Take input x (BPM position) and discretize / bin.
         :param x: BPM position (float)
-        :return: bin_idx (bin index)
-        """
+        :return: bin_idx (bin index) """
         bin_idx = int((x - self.x_min + self.x_margin_discretisation) /
                       self.observation_bin_width)
         return bin_idx
@@ -271,16 +265,27 @@ class TargetSteeringEnv(gym.Env):
         """ Calculate maximum reward. This is used to define the threshold
         for cancellation of an episode. Note that in reality this is usually
         not known. """
-        angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 200)
-        max_r = -1.
+        _, _, rewards = self.get_response()
+        return np.max(rewards)
+
+    def get_response(self):
+        """ Calculate response of the environment, i.e. the x_position and
+        reward dependence on the dipole kick angle. """
+        angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 1000)
+        x_pos = np.zeros_like(angles)
+        rewards = np.zeros_like(angles)
         for i, ang in enumerate(angles):
-            _, r = self.get_pos_at_bpm_target(total_angle=ang)
-            max_r = max(r, max_r)
-        return max_r
+            x, r = self.get_pos_at_bpm_target(total_angle=ang)
+            x_pos[i] = x
+            rewards[i] = r
+        return angles, x_pos, rewards
 
     def get_max_n_steps_optimal_behaviour(self):
-        """
-        :return: maximum number of steps required to solve the problem from any
-        initial condition assuming optimal behaviour of agent.
-        """
-        return np.ceil(self.x_max / self.x_delta - 1)
+        """ Calculate maximum number of steps required to solve the problem
+        from any initial condition assuming optimal behaviour of agent. We
+        take into account the reward threshold (above which the problem is
+        assumed to be solved). """
+        _, x, r = self.get_response()
+        idx = np.where(r > self.reward_threshold)[0][-1]
+        x_up_reward_thresh = x[idx]
+        return np.ceil((self.x_max - x_up_reward_thresh) / self.x_delta - 1)

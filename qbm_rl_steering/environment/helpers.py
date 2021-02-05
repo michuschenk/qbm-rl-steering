@@ -9,14 +9,7 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     :param fig_title: figure title
     :return: None
     """
-    # Scan through angles and plot response
-    angles = np.linspace(env.mssb_angle_min, env.mssb_angle_max, 200)
-    x_bpm = np.zeros_like(angles)
-    rewards = np.zeros_like(angles)
-    for i, ang in enumerate(angles):
-        x, r = env.get_pos_at_bpm_target(total_angle=ang)
-        x_bpm[i] = x
-        rewards[i] = r
+    angles, x_bpm, rewards = env.get_response()
 
     fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
@@ -77,6 +70,8 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
     axs[0].plot(data['state_float'])
     axs[1].plot(data['action'])
     axs[2].plot(data['reward'])
+    axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
+    axs[2].axhline(env.get_max_reward(), c='k', ls='-', label='Max. reward')
 
     for i in range(3):
         for j in n_steps:
@@ -111,13 +106,17 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
         [s for s in env.logger.done_reason_map.values()], rotation=45)
     axs[0].set_ylim(-0.5, max(env.logger.done_reason_map.keys()) + 0.5)
 
-    # Episode length
+    # Episode length (for statistics remove zero entries)
+    msk = episodic_data['episode_length'] == 0
+    n_steps_avg = np.mean(episodic_data['episode_length'][~msk])
+    n_steps_std = np.std(episodic_data['episode_length'][~msk])
     axs[1].plot(episodic_data['episode_count'], episodic_data['episode_length'],
-                c='tab:blue')
-    axs[1].axhline(env.max_steps_per_epoch, c='k', label='Max. # steps')
+                c='tab:blue',
+                label=f'#steps {n_steps_avg:.1f} +/- {n_steps_std:.1f}')
+    axs[1].axhline(env.max_steps_per_episode, c='k', label='Max. # steps')
     axs[1].axhline(env.get_max_n_steps_optimal_behaviour(),
                    c='k', ls='--', label='UB optimal behaviour')
-    axs[1].set_ylim(0, 1.1*env.max_steps_per_epoch)
+    axs[1].set_ylim(0, 1.1 * env.max_steps_per_episode)
 
     # Reward
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_initial'],
@@ -139,25 +138,25 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     plt.show()
 
 
-def evaluate_agent(env, agent, n_epochs=100, make_plot=False,
+def evaluate_agent(env, agent, n_episodes=100, make_plot=False,
                    fig_title='Agent test'):
-    """ Run agent for a number of epochs on environment and plot log.
+    """ Run agent for a number of episodes on environment and plot log.
     :param env: openAI gym environment
     :param agent: agent (trained or untrained)
-    :param n_epochs: number of epochs for the test
+    :param n_episodes: number of episodes for the test
     :param fig_title: figure title of output plot
     :return: None
     """
-    epoch_count = 0
+    episode_count = 0
     env.clear_log()
     obs = env.reset()
-    while epoch_count < n_epochs:
+    while episode_count < n_episodes:
         action, _states = agent.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
         # agent.render()
         if done:
             obs = env.reset()
-            epoch_count += 1
+            episode_count += 1
     if make_plot:
         plot_log(env, fig_title=fig_title)
 
@@ -174,8 +173,8 @@ def calculate_performance_metrics(env: TargetSteeringEnv):
 
     # Option (I)
     upper_bound_optimal = env.get_max_n_steps_optimal_behaviour()
-    msk_steps = episodic_data['episode_length'] < upper_bound_optimal
-    msk_reward = episodic_data['reward_final'] > env.reward_threshold
+    msk_steps = episodic_data['episode_length'] <= upper_bound_optimal
+    msk_reward = episodic_data['reward_final'] >= env.reward_threshold
     msk_nothing_to_do = episodic_data['episode_length'] == 0
 
     n_success = np.sum(msk_steps & msk_reward & (~msk_nothing_to_do))
