@@ -49,10 +49,10 @@ class Logger:
         data = {'state': [], 'action': [], 'reward': []}
 
         for log_ep in self.log_all:
-            for data in log_ep:
-                data['state'].append(data[0])
-                data['action'].append(data[1])
-                data['reward'].append(data[2])
+            for d in log_ep:
+                data['state'].append(d[0])
+                data['action'].append(d[1])
+                data['reward'].append(d[2])
 
         for k in data.keys():
             data[k] = np.array(data[k])
