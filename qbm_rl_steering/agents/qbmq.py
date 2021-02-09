@@ -3,6 +3,8 @@ import random
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 from qbm_rl_steering.agents.qbmq_utils import *
 
+from neal import SimulatedAnnealingSampler
+
 class Q_Function(object):
     def __init__(self,n_observations,n_actions):
         self.Qhh = dict()
@@ -32,8 +34,12 @@ class Q_Function(object):
                 self.Q_vh[(i, j,)] = 2 * random.random() - 1
 
 
+    def calculate_and_predict(self,state,all_possible_action):
+        #return max_action, free_energy, samples, vis_iteration
+        pass
+
     #to be implemented:
-    def predict(self,state,all_possible_actions):
+    def predict(self,state,all_possible_actions,epsilon=0):
         #returns action with max Q
 
         #requires state and actions as tuple with -1,1
@@ -88,13 +94,17 @@ class QBMQN(object):
 
 
     def learn(self,n_iterations):
-        state_0 = self.env.reset()
+        state_1 = self.env.reset()
         all_possible_actions = env.something
         for i in range(n_iterations):
-            action = self.q_function.predict(state_0,all_possible_actions)
-            state_1,reward, done,_ = env.step(action)
+            action_1 = self.q_function.predict(state_1,all_possible_actions) # --> current_F,
+            state_2,reward, done,_ = env.step(action_1)
+            action_2 = self.q_function.predict(state_2,all_possible_actions) # --> future_F
+
+
             #check what is required for weight update
             #check how to get handle on current and future F.
+            #at the end state_1 = state_2
 
 
 
