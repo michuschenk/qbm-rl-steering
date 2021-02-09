@@ -2,8 +2,8 @@ import numpy as np
 
 
 class Logger:
-    """ Class to log events taking place in an openAI gym environment. """
-    def __init__(self):
+    """ Class to log events taking place in an OpenAI gym environment. """
+    def __init__(self) -> None:
         self.log_all = []
         self.log_episode = []
 
@@ -13,17 +13,19 @@ class Logger:
             1: 'Reward thresh.',
             2: 'State OOB'}
 
-    def episode_reset(self):
+    def episode_reset(self) -> None:
         """ Clear only episodic log. """
         self.log_episode = []
 
-    def clear_all(self):
+    def clear_all(self) -> None:
         """ Clear all logs. """
         self.log_episode = []
         self.log_all = []
 
-    def extract_episodic_data(self):
-        """ Function to extract episodic data into a dictionary """
+    def extract_episodic_data(self) -> dict:
+        """ Function to extract episodic data into a dictionary
+        :return dictionary with episode length, initial and final rewards,
+        reason for episode abort, and number of episode. """
         n_episodes = len(self.log_all)
 
         data = {}
@@ -41,13 +43,13 @@ class Logger:
             data['episode_count'][i] = i
         return data
 
-    def extract_all_data(self):
-        """ Does not only extract episodic data, but all the steps, in a flat
-        structure. Returns data dictionary and array of n_steps that
-        describes lengths of episodes. """
+    def extract_all_data(self) -> (dict, np.ndarray):
+        """ Does not only extract episodic data, but all the steps, into a flat
+        structure.
+        :return tuple of data dictionary and array of n_steps that describes
+        lengths of episodes. """
         # Unpack data (convert states from binary to floats)
         data = {'state': [], 'action': [], 'reward': []}
-
         for log_ep in self.log_all:
             for d in log_ep:
                 data['state'].append(d[0])

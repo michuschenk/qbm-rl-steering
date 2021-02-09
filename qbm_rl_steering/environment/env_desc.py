@@ -7,8 +7,8 @@ from .logger import Logger
 
 
 class TwissElement:
-    def __init__(self, beta, alpha, d, mu):
-        """
+    def __init__(self, beta: float, alpha: float, d: float, mu: float) -> None:
+        """ Initialize a Twiss element as part of a beam transfer line.
         :param beta: beta Twiss function value at element
         :param alpha: alpha Twiss function value at element
         :param d: ?
@@ -21,7 +21,12 @@ class TwissElement:
 def transport(element1: TwissElement, element2: TwissElement, x: float,
               px: float) -> (float, float):
     """ Transport (x, xp) coordinate-momentum pair from element 1 to element 2
-    using linear transport. """
+    using linear transport.
+    :param element1: the first Twiss element, starting point
+    :param element2: the second Twiss element, end point
+    :param x: initial coordinate (m), at element1
+    :param px: initial momentum (?), at element1
+    :return (x, px): tuple of coordinate and momentum at element2 """
     mu = element2.mu - element1.mu
     alpha1 = element1.alpha
     alpha2 = element2.alpha
@@ -38,43 +43,46 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 
 class TargetSteeringEnv(gym.Env):
-    def __init__(self, n_bits_observation_space=8, max_steps_per_episode=20,
-                 debug=False):
+    def __init__(self, n_bits_observation_space: int = 8,
+                 max_steps_per_episode: int = 20,
+                 debug: bool = False) -> None:
         """
-        :param n_bits_observation_space: number of bits used to represent the
-        observation space (now discrete)
-        :param max_steps_per_episode: max number of steps per episode
 
-        x0: beam position at origin, i.e. before entering MSSB
-        state: beam position at BPM (observation / state)
-        mssb_angle: dipole kick angle (rad)
-        mssb_min, mssb_max: min. and max. dipole strengths for init. (rad)
-        mssb_delta: amount of discrete change in mssb_angle upon action (rad)
-        """
+        :param n_bits_observation_space: number of bits used to represent the
+        observation space (will be discretized into
+        2**n_bits_observation_space bins)
+        :param max_steps_per_episode: max number of steps we allow agent to
+        'explore' per episode. After this number of steps, episode is aborted.
+        :param debug: Flag for debugging, adds some prints here and there. """
         super(TargetSteeringEnv, self).__init__()
 
-        # MSSB (dipole) kicker
-        self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -160e-6
-        self.mssb_angle_max = 160e-6
-        self.mssb_delta = 3e-5  # discrete action step (rad)
-
-        # Beam position
-        self.x0 = 0.
-        self.state = None  # not set, will be init. with self.reset()
-
-        # Define transfer line
+        # DEFINE TRANSFER LINE
         self.mssb = TwissElement(16.1, -0.397093117, 0.045314011, 1.46158005)
         self.bpm1 = TwissElement(339.174497, -6.521184683, 2.078511443,
                                  2.081365696)
         self.target = TwissElement(7.976311944, -0.411639485, 0.30867161,
                                    2.398031982)
 
-        # Get possible range of observations to define observation_space
+        # MSSB DIPOLE / KICKER
+        # mssb_angle: dipole kick angle (rad)
+        # mssb_min, mssb_max: min. and max. dipole strengths for init. (rad)
+        # mssb_delta: amount of discrete change in mssb_angle upon action (rad)
+        self.mssb_angle = None  # not set, will be init. with self.reset()
+        self.mssb_angle_min = -160e-6  # (rad)
+        self.mssb_angle_max = 160e-6  # (rad)
+        self.mssb_delta = 3e-5  # discrete action step (rad)
+
+        # BEAM POSITION
+        # x0: position at origin, i.e. before entering MSSB
+        # state: position at BPM(observation / state)
+        # x_min, x_max: possible range of observations to define
+        # observation_space given mssb_angle_min, mssb_angle_max
+        self.x0 = 0.
+        self.state = None  # not set, will be init. with self.reset()
         self.x_max, _ = self.get_pos_at_bpm_target(self.mssb_angle_max)
         self.x_min, _ = self.get_pos_at_bpm_target(self.mssb_angle_min)
 
-        # find change in x for change mssb_delta in dipole to define the
+        # Find change in x for change mssb_delta in dipole to define the
         # threshold for canceling an episode and to define the discretization
         # range required (the latter has to be larger than the former by at
         # least x_delta)
@@ -82,24 +90,25 @@ class TargetSteeringEnv(gym.Env):
             self.mssb_angle_min + self.mssb_delta)
         x_delta = x_min_plus_delta - self.x_min
         self.x_delta = x_delta
-        self.x_margin_discretisation = 8 * x_delta
+        self.x_margin_discretization = 8 * x_delta
         self.x_margin_abort_episode = (
-                self.x_margin_discretisation - 1.5 * x_delta)
+                self.x_margin_discretization - 1.5 * x_delta)
 
-        # Gym requirements
-        # Define action space with 3 discrete actions.
+        # GYM REQUIREMENTS
+        # Define action space with 3 discrete actions. Action_map defines how
+        # action is mapped to change of self.mssb_angle.
         self.action_space = gym.spaces.Discrete(3)
         self.action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
 
-        # This will create a discrete state space with
+        # This will create a discrete observation / state space with
         # length n_bits_observation_space, i.e. the Q-network will have
-        # n_bits_observation_space nodes at its input layer. You can find
+        # n_bits_observation_space nodes at its input layer. You can verify
         # that by checking agent.q_net once initialized.
         self.observation_space = gym.spaces.MultiBinary(
             n_bits_observation_space)
         self.observation_bin_width = (
-            (2. * self.x_margin_discretisation + self.x_max - self.x_min) /
-            2**n_bits_observation_space)
+                (2. * self.x_margin_discretization + self.x_max - self.x_min) /
+                2 ** n_bits_observation_space)
         self.n_bits_observation_space = n_bits_observation_space
 
         # For cancellation when beyond certain number of steps in an episode
@@ -107,19 +116,24 @@ class TargetSteeringEnv(gym.Env):
         self.max_steps_per_episode = max_steps_per_episode
         self.reward_threshold = 0.9 * self.get_max_reward()
 
-        # Logging
+        # Logging and debugging
         self.logger = Logger()
         self.debug = debug
 
-    def step(self, action):
-        """ Action is discrete here and is an integer number in set {0, 1, 2}.
-        Action_map shows how action is mapped to change of self.mssb_angle. """
+    def step(self, action: int) -> (np.ndarray, float, bool, dict):
+        """ Perform one step in the environment (take an action, update
+        parameters in environment, receive reward, check if episode ends,
+        append all info to logger, return new state, reward, etc.
+        :param action: is discrete here and is an integer number in {0, 1, 2}.
+        :return tuple of the new state, reward, whether episode is done,
+        and dictionary with additional info (not used at the moment). """
         err_msg = f"{action} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
 
         x_binary = self.state
 
-        # Apply action and update environment
+        # Apply action and update environment (get new position at BPM and
+        # convert into a binary vector)
         total_angle = self.mssb_angle + self.action_map[action]
         x_new, reward = self.get_pos_at_bpm_target(total_angle)
         x_new_binary = self._make_state_discrete_binary(x_new)
@@ -136,7 +150,7 @@ class TargetSteeringEnv(gym.Env):
 
         self.step_count += 1
 
-        # Episode done?
+        # Is episode done?
         done = bool(
             self.step_count > self.max_steps_per_episode
             or reward > self.reward_threshold
@@ -164,14 +178,19 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state, reward, done, {}
 
-    def reset(self):
+    def reset(self) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
-        self.mssb_delta. """
+        self.mssb_delta, get the initial state, and reset logger. This method
+        gets called e.g. at the end of an episode.
+        :return an initial state """
+        # Initialize the mssb_angle as a multiple of mssb_delta and calculate
+        # the corresponding position at the BPM (= state)
         idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
         idx = np.random.randint(idx_max)
         self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
         x_init, _ = self.get_pos_at_bpm_target(self.mssb_angle)
 
+        # Convert state into binary vector
         x_init_binary = self._make_state_discrete_binary(x_init)
         self.state = x_init_binary
 
@@ -187,17 +206,16 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state
 
-    def clear_log(self):
-        """ Delete log / history of the environment. """
+    def clear_log(self) -> None:
+        """ Delete all log / history of the logger of this environment. """
         self.logger.clear_all()
 
-    def _get_reward(self, beam_pos: float):
-        """
-        Calculate reward of environment state: reward is defined by integrated
-        intensity on target (assuming Gaussian beam, integration range +/- 3
-        sigma.
+    def _get_reward(self, beam_pos: float) -> float:
+        """ Calculate reward of environment given beam position on target.
+        Reward is defined by integrated intensity on target (assuming
+        Gaussian beam, integration range +/- 3 sigma).
         :param beam_pos: beam position on target (not known to RL agent)
-        :return: reward, float in [0, 1]. """
+        :return: reward, float in range ~[0, 1]. """
         emittance = 1.1725E-08
         sigma = math.sqrt(self.target.beta * emittance)
         self.intensity_on_target = quad(
@@ -209,12 +227,12 @@ class TargetSteeringEnv(gym.Env):
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> (float, float):
-        """
-        Transports beam through the transfer line and calculates the position at
-        the BPM and at the target. These are required for the reward
-        calculation.
-        :param total_angle: total kick angle from the MSSB dipole (rad)
-        :return: position at BPM and reward as a tuple """
+        """ Transports beam through the transfer line and calculates the
+        position at the BPM and at the target. These are required for the reward
+        calculation and to get the state based on the currently set dipole
+        angle.
+        :param total_angle: total kick angle of the MSSB dipole (rad)
+        :return position at BPM and reward as a tuple """
         x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
         x_target, px_target = transport(
             self.mssb, self.target, self.x0, total_angle)
@@ -222,11 +240,11 @@ class TargetSteeringEnv(gym.Env):
         reward = self._get_reward(x_target)
         return x_bpm, reward
 
-    def _make_state_discrete_binary(self, x):
+    def _make_state_discrete_binary(self, x: float) -> np.ndarray:
         """ Discretize state into 2**self.n_bits_observation_space bins and
         convert to binary format.
         :param x: input BPM position (float), to be converted to binary
-        :return x_binary: list of length self.n_bits_observation
+        :return x_binary: np.array of length self.n_bits_observation_space
         encoding the state in discrete, binary format. """
         bin_idx = self._make_state_discrete(x)
 
@@ -242,35 +260,42 @@ class TargetSteeringEnv(gym.Env):
         x_binary = np.array([int(i) for i in binary_string])
         return x_binary
 
-    def _make_state_discrete(self, x):
+    def _make_state_discrete(self, x: float) -> int:
         """ Take input x (BPM position) and discretize / bin.
-        :param x: BPM position (float)
-        :return: bin_idx (bin index) """
-        bin_idx = int((x - self.x_min + self.x_margin_discretisation) /
+        :param x: BPM position
+        :return: bin index """
+        bin_idx = int((x - self.x_min + self.x_margin_discretization) /
                       self.observation_bin_width)
         return bin_idx
 
-    def make_binary_state_float(self, x_binary):
+    def make_binary_state_float(self, x_binary: np.ndarray) -> float:
         """ This is the inverse operation of _make_state_discrete_binary(..).
-        I.e. we take a binary input list of length
-        self.n_bits_observation_space and convert it into a float
-        corresponding to the BPM position. """
+        I.e. we take a binary input np.array of length
+        self.n_bits_observation_space and convert it back to a float
+        corresponding to the BPM position (modulo the loss of precision due
+        to the discretization performed earlier).
+        :param x_binary: state as binary encoded vector, i.e. np.array of
+        length self.n_bits_observation_space
+        :return x position converted back to a float """
         binary_string = ''.join([str(i) for i in x_binary])
         bin_idx = int(binary_string, 2)
         x = ((bin_idx + 0.5) * self.observation_bin_width +
-             self.x_min - self.x_margin_discretisation)
+             self.x_min - self.x_margin_discretization)
         return x
 
-    def get_max_reward(self):
+    def get_max_reward(self) -> float:
         """ Calculate maximum reward. This is used to define the threshold
-        for cancellation of an episode. Note that in reality this is usually
-        not known. """
+        for cancellation of an episode. Note that this is usually not known.
+        :return maximum reward """
         _, _, rewards = self.get_response()
         return np.max(rewards)
 
-    def get_response(self):
+    def get_response(self) -> (np.ndarray, np.ndarray, np.ndarray):
         """ Calculate response of the environment, i.e. the x_position and
-        reward dependence on the dipole kick angle. """
+        reward dependence on the dipole kick angle (for the full available
+        range of angles).
+        :return Tuple of np.ndarrays containing dipole angles, x positions,
+        and rewards. """
         angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 1000)
         x_pos = np.zeros_like(angles)
         rewards = np.zeros_like(angles)
@@ -280,11 +305,12 @@ class TargetSteeringEnv(gym.Env):
             rewards[i] = r
         return angles, x_pos, rewards
 
-    def get_max_n_steps_optimal_behaviour(self):
+    def get_max_n_steps_optimal_behaviour(self) -> int:
         """ Calculate maximum number of steps required to solve the problem
         from any initial condition assuming optimal behaviour of agent. We
         take into account the reward threshold (above which the problem is
-        assumed to be solved). """
+        assumed to be solved).
+        :return upper bound for number of required steps (int). """
         _, x, r = self.get_response()
         idx = np.where(r > self.reward_threshold)[0][-1]
         x_up_reward_thresh = x[idx]

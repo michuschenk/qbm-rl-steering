@@ -1,35 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from stable_baselines3 import DQN
+
 from .env_desc import TargetSteeringEnv
 
 
 def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
-    """ Scan through angles and plot response of transfer line environment
-    :param env: openAI gym-based environment of transfer line
-    :param fig_title: figure title
-    :return: None
-    """
+    """ Plot response of transfer line environment, i.e. BPM position and
+    reward vs. dipole kick angle.
+    :param env: OpenAI gym-based environment of transfer line
+    :param fig_title: figure title """
     angles, x_bpm, rewards = env.get_response()
 
     fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
+
+    # BPM response
     l1, = ax1.plot(1e6*angles, 1e3*x_bpm, 'tab:blue')
 
+    # Show margins and episode abort criteria
     ax1.axhline(1e3*(env.x_min - env.x_margin_abort_episode), color='grey')
-    ax1.axhline(1e3*(env.x_min - env.x_margin_discretisation), color='black')
-
+    ax1.axhline(1e3 * (env.x_min - env.x_margin_discretization), color='black')
     l11 = ax1.axhline(1e3*(env.x_max + env.x_margin_abort_episode),
                       color='grey')
-    l12 = ax1.axhline(1e3*(env.x_max + env.x_margin_discretisation),
+    l12 = ax1.axhline(1e3 * (env.x_max + env.x_margin_discretization),
                       color='black')
+
+    # Reward response
+    ax2 = ax1.twinx()
+    l2, = ax2.plot(1e6*angles, rewards, c='tab:red')
 
     ax1.set_xlabel('MSSB angle (urad)')
     ax1.set_ylabel('BPM pos. (mm)')
-
-    ax2 = ax1.twinx()
-    l2, = ax2.plot(1e6*angles, rewards, c='tab:red')
     ax2.set_ylabel('Reward')
-
     plt.legend((l1, l11, l12, l2),
                ('BPM pos.', 'Episode abort', 'Discretisation', 'Reward'),
                loc='upper left', fontsize=10)
@@ -41,11 +44,9 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
                             fig_title: str = '') -> None:
     """ Test the environment, create trajectories, use reset, etc. using random
     actions.
-    :param env: openAI gym environment
-    :param n_episodes: number of episode to run
-    :param fig_title: figure title
-    :return: None
-    """
+    :param env: OpenAI gym-based environment of transfer line
+    :param n_episodes: number of episode to run test for
+    :param fig_title: figure title """
     env.clear_log()
     env.reset()
     episode_count = 0
@@ -88,11 +89,9 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
 
 def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     """ Plot the evolution of the state, action, and reward using the data
-    stored in env.log .
-    :param env: openAI gym environment
-    :param fig_title: figure title
-    :return: None
-    """
+    stored in environment logger .
+    :param env: OpenAI gym-based environment of transfer line
+    :param fig_title: figure title """
     episodic_data = env.logger.extract_episodic_data()
 
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 7))
@@ -138,15 +137,15 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     plt.show()
 
 
-def evaluate_agent(env, agent, n_episodes=100, make_plot=False,
-                   fig_title='Agent test'):
+def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
+                   n_episodes: int = 100, make_plot: bool = False,
+                   fig_title: str = 'Agent test') -> None:
     """ Run agent for a number of episodes on environment and plot log.
-    :param env: openAI gym environment
-    :param agent: agent (trained or untrained)
-    :param n_episodes: number of episodes for the test
-    :param fig_title: figure title of output plot
-    :return: None
-    """
+    :param env: OpenAI gym-based environment of transfer line
+    :param agent: DQN agent (trained or untrained)
+    :param n_episodes: number of episodes used to evaluate agent
+    :param make_plot: flag to decide whether to show plots or not
+    :param fig_title: figure title """
     episode_count = 0
     env.clear_log()
     obs = env.reset()
@@ -161,14 +160,16 @@ def evaluate_agent(env, agent, n_episodes=100, make_plot=False,
         plot_log(env, fig_title=fig_title)
 
 
-def calculate_performance_metrics(env: TargetSteeringEnv):
+def calculate_performance_metrics(env: TargetSteeringEnv) -> (float, float):
     """ Define metric that characterizes performance of the agent
     Option (I): we count how many times the agent manages to reach the target
     without going above 'UB optimal behaviour' (i.e. max. number of steps
     required assuming optimal behaviour).
     Option (II): Take difference between initial and final reward and
     divide by number of steps required.
-    I think option (II) gives a bit more detail, but we implement both. """
+    I think option (II) gives a bit more detail, but we implement both.
+    :param env: OpenAI gym-based environment of transfer line
+    :return tuple of metrics for option I and II described above. """
     episodic_data = env.logger.extract_episodic_data()
 
     # Option (I)

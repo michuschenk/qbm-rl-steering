@@ -11,10 +11,10 @@ from environment.env_desc import TargetSteeringEnv
 N_BITS_OBSERVATION_SPACE = 8
 
 
-def test_environment():
+def test_environment() -> TargetSteeringEnv:
     """ To understand environment better, plot response and test random
     action-taking.
-    :returns env: environment """
+    :return env: TargetSteering environment """
     env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE)
     check_env(env)
     hlp.plot_response(env, fig_title='Env. test: response function')
@@ -23,12 +23,12 @@ def test_environment():
     return env
 
 
-def init_agent(env, scan_params=None):
+def init_agent(env: TargetSteeringEnv, scan_params: dict = None) -> DQN:
     """ Initialize an agent for training.
-    :param env: openAI gym environment.
+    :param env: OpenAI gym environment.
     :param scan_params: dictionary with additional keyword arguments for DQN
     or arguments to overwrite (this can also be overwriting the policy_kwargs)
-    :returns new instance of environment and agent with given arguments. """
+    :return new instance of DQN agent. """
     policy_kwargs = dict(net_arch=[128, 128])
     dqn_kwargs = dict(
         policy='MlpPolicy', env=env, verbose=0, learning_starts=0,
@@ -42,17 +42,21 @@ def init_agent(env, scan_params=None):
     return DQN(**dqn_kwargs)
 
 
-def evaluate_performance(n_evaluations=30, n_steps_train=2000,
-                         n_episodes_test=1000, max_steps_per_episode=20,
-                         scan_params=None, make_plots=False):
-    """ Evaluate performance of agent for the scan parameter.
-    :param n_evaluations: number of full trainings of the agent
+def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
+                         n_episodes_test: int = 1000,
+                         max_steps_per_episode: int = 20,
+                         scan_params: dict = None, make_plots: bool = False) \
+        -> (np.ndarray, np.ndarray):
+    """ Evaluate performance of agent for the scan params and return
+    np.arrays containing the average and standard deviation of the two
+    metrics defined in helpers.calculate_performance_metrics(..).
+    :param n_evaluations: number of full from-scratch-trainings of the agent
     :param n_steps_train: number of training steps per evaluation
     :param n_episodes_test: number of episodes to evaluate performance
     :param max_steps_per_episode: number of steps per episode (abort criterion)
     :param scan_params: dictionary of parameters that we scan
-    :return: average and std. dev of performance metrics.
-    """
+    :param make_plots: flag to decide whether to show plots or not
+    :return: average and std. dev of both performance metrics. """
     if scan_params is None:
         print('Running performance test with default parameters')
 
