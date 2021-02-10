@@ -11,19 +11,6 @@ import tqdm
 from typing import Union
 
 
-def make_action_binary(action_index: int) -> tuple:
-    """ Similar to make_state_discrete_binary. Convert action_index to a
-    binary vector using 0s and 1s. Conversion of 0s to -1s will be done in a
-    separate function.
-    :param action_index: index of action (integer). See which index
-    corresponds to which action in env.action_map.
-    :return binary vector that encodes the action_index """
-    n_bits_action_space = 2  # can describe 2**n_bits_action_space actions
-    binary_fmt = f'0{n_bits_action_space}b'
-    action_binary = tuple([int(i) for i in format(action_index, binary_fmt)])
-    return action_binary
-
-
 def convert_bits(vec: Union[tuple, np.ndarray], mapping: dict = {0: -1}) \
         -> tuple:
     """ Remap values in vec (bits) according to the mapping dict. Default
@@ -37,20 +24,18 @@ def convert_bits(vec: Union[tuple, np.ndarray], mapping: dict = {0: -1}) \
     return tuple(vec)
 
 
-def create_visible_iterable(state: np.ndarray, action: int) -> tuple:
-    """ Take state (e.g. directly from environment), and action_index (
-    following env.action_map), and concatenate them to the visible_iterable
-    tuple required for the create_general_Q_from(..) function. This also
-    converts all 0s appearing in state and action_index (once made binary) to
-    -1s.
-    :param state: state in binary-encoded vector, as obtained directly from
-    the environment (either through .reset(), or .step())
-    :param action: index of action as used in environment
-    :return tuple, concatenation of state and action, following the
-    convention of Mircea's code on QBM. """
-    s = convert_bits(state)
-    a = convert_bits(make_action_binary(action))
-    return s + a
+def make_action_binary(action_index: int, n_bits_action_space: int) -> tuple:
+    """ Similar to make_state_discrete_binary. Convert action_index to a
+    binary vector using 0s and 1s. Conversion of 0s to -1s will be done in a
+    separate function.
+    :param action_index: index of action (integer). See which index
+    corresponds to which action in env.action_map.
+    :param n_bits_action_space: number of bits required to describe action
+    space in binary.
+    :return binary vector that encodes the action_index """
+    binary_fmt = f'0{n_bits_action_space}b'
+    action_binary = tuple([int(i) for i in format(action_index, binary_fmt)])
+    return action_binary
 
 
 class QFunction(object):
@@ -104,6 +89,21 @@ class QFunction(object):
                     self.n_bits_observation_space + self.n_bits_action_space):
                 self.Q_vh[(i, j,)] = 2 * random.random() - 1
 
+    def _create_visible_iterable(self, state: np.ndarray, action: int) -> tuple:
+        """ Take state (e.g. directly from environment), and action_index (
+        following env.action_map), and concatenate them to the visible_iterable
+        tuple required for the create_general_Q_from(..) function. This also
+        converts all 0s appearing in state and action_index (once made binary) to
+        -1s.
+        :param state: state in binary-encoded vector, as obtained directly from
+        the environment (either through .reset(), or .step())
+        :param action: index of action as used in environment
+        :return tuple, concatenation of state and action, following the
+        convention of Mircea's code on QBM. """
+        s = convert_bits(state)
+        a = convert_bits(make_action_binary(action, self.n_bits_action_space))
+        return s + a
+
     def calculate_F(self, state: np.ndarray, action: int) -> tuple:
         """ Based on state and chosen action, calculate the free energy,
         samples and vis_iterable.
@@ -111,7 +111,7 @@ class QFunction(object):
         obtained from either env.reset(), or env.step())
         :param action: chosen action (index)
         :return free energy, samples, and vis_iterable """
-        vis_iterable = create_visible_iterable(state=state, action=action)
+        vis_iterable = self._create_visible_iterable(state=state, action=action)
 
         general_Q = utl.create_general_Q_from(
             Q_hh=self.Q_hh, Q_vh=self.Q_vh, visible_iterable=vis_iterable)
@@ -234,7 +234,7 @@ class QBMQN(object):
             # Need to take max Q, resp. min. F, or random action if
             # epsilon-greedy is fulfilled. Do I really need to loop through
             # all the actions to calculate the Q values for every action to
-            # then pick the argmax  Q?
+            # then pick the argmax_a Q?
             action_2, future_F, future_samples, future_vis_iterable = (
                 self.q_function.calculate_and_predict(state_2, epsilon[it])
             )
@@ -299,7 +299,7 @@ if __name__ == "__main__":
     # Agent training
     replica_count = 10
     average_size = 50
-    total_timesteps = 2000
+    total_timesteps = 100
 
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
     agent = QBMQN(env, replica_count=replica_count, average_size=average_size,
