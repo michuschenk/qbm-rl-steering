@@ -150,7 +150,7 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
     env.clear_log()
     obs = env.reset()
     while episode_count < n_episodes:
-        action, _states = agent.predict(obs, deterministic=True)
+        action, _ = agent.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
         # agent.render()
         if done:

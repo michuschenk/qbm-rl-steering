@@ -1,6 +1,7 @@
 import random
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 import qbm_rl_steering.agents.qbmq_utils as utl
+import qbm_rl_steering.environment.helpers as hlp
 
 from neal import SimulatedAnnealingSampler
 import numpy as np
@@ -251,6 +252,23 @@ class QBMQN(object):
             state_1 = state_2
             if done:
                 state_1 = env.reset()
+        # Reset environment after training to save episode logging to all logs.
+        env.reset()
+
+    def predict(self, state, deterministic):
+        """ Based on the given state, we pick the best action (here we always
+        pick the action greedily, i.e. epsilon = 0., as we are assuming that
+        the agent has been trained). This method is required to evaluate the
+        trained agent.
+        :param state: state encoded as binary-encoded vector as obtained from
+        environment .reset() or .step()
+        :param deterministic: another argument used by stable-baselines3
+        :return next action, None: need to fulfill the stable-baselines3
+        interface """
+        action, free_energy, samples, vis_iterable = (
+            self.q_function.calculate_and_predict(state=state, epsilon=0.))
+
+        return action, None
 
     def _get_epsilon_schedule(self, total_timesteps: int) -> np.ndarray:
         """ Define epsilon schedule as linear decay between time step 0 and
@@ -270,16 +288,25 @@ class QBMQN(object):
 
 
 if __name__ == "__main__":
-    debug = True
-
     # TODO: Logging needs to be changed potentially?
     # TODO: where should these variables go? Into QBMQN?
+
+    N_BITS_OBSERVATION_SPACE = 8
+
+    # Agent training
     replica_count = 10
     average_size = 50
+    total_timesteps = 100
 
-    env = TargetSteeringEnv(n_bits_observation_space=8)
+    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
     agent = QBMQN(env, replica_count=replica_count, average_size=average_size,
                   big_gamma=0.5, beta=2., exploration_fraction=0.8,
                   exploration_initial_eps=1.0, exploration_final_eps=0.,
                   small_gamma=0.98, learning_rate=1e-3)
-    agent.learn(total_timesteps=10)
+    agent.learn(total_timesteps=total_timesteps)
+    hlp.plot_log(env, fig_title='Agent training')
+
+    # Agent evaluation
+    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
+    hlp.evaluate_agent(env, agent, n_episodes=6,
+                       make_plot=True, fig_title='Agent evaluation')
