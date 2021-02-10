@@ -178,6 +178,17 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state, reward, done, {}
 
+    def end_training(self):
+        """ Call at the end of the training to append the episode log to the
+        log_all. Not sure if this is necessary. Maybe better to drop the last
+        episode which is incomplete. """
+        try:
+            # Append the last episode if it has not already been 'done'
+            if not self.logger.log_episode[-1][4]:
+                self.logger.log_all.append(self.logger.log_episode)
+        except IndexError:
+            pass
+
     def reset(self) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta, get the initial state, and reset logger. This method
