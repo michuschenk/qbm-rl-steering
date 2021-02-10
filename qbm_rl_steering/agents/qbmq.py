@@ -256,8 +256,6 @@ class QBMQN(object):
             state_1 = state_2
             if done:
                 state_1 = env.reset()
-        # Reset environment after training to save episode logging to all logs.
-        env.reset()
 
     def predict(self, state, deterministic):
         """ Based on the given state, we pick the best action (here we always
