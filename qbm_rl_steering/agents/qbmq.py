@@ -157,6 +157,10 @@ class QFunction(object):
 
                 # If the now calculated F is smaller than the previous minimum
                 # (i.e. max. Q), update values in dictionary
+                # TODO: Mircea's code is using the opposite sign which I
+                #  think is wrong. Since Q ~ -F, I believe we want to replace
+                #  the entries in the dict once we find an even smaller F to
+                #  then select the action that gives the maximum Q (?!)
                 if max_dict['free_energy'] > free_energy:
                     max_dict['free_energy'] = free_energy
                     max_dict['action'] = action
