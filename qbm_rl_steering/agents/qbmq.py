@@ -248,11 +248,14 @@ class QBMQN(object):
                     reward_1,
                     future_F,
                     current_F,
-                    current_vis_iterable,
+                    current_vis_iterable,  # is it current_vis_iterable?
                     self.learning_rate,
                     self.small_gamma)
             )
 
+            # TODO: is it correct that we never take action_2?
+            # Note that environment is already in state_2, so that should be
+            # correct.
             state_1 = state_2
             if done:
                 state_1 = env.reset()
@@ -264,7 +267,8 @@ class QBMQN(object):
         trained agent.
         :param state: state encoded as binary-encoded vector as obtained from
         environment .reset() or .step()
-        :param deterministic: another argument used by stable-baselines3
+        :param deterministic: dummy argument to satisfy stable-baselines3
+        interface
         :return next action, None: need to fulfill the stable-baselines3
         interface """
         action, free_energy, samples, vis_iterable = (
@@ -290,25 +294,22 @@ class QBMQN(object):
 
 
 if __name__ == "__main__":
-    # TODO: Logging needs to be changed potentially?
-    # TODO: where should these variables go? Into QBMQN?
-
     N_BITS_OBSERVATION_SPACE = 8
 
     # Agent training
     replica_count = 10
     average_size = 50
-    total_timesteps = 100
+    total_timesteps = 2000
 
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
     agent = QBMQN(env, replica_count=replica_count, average_size=average_size,
                   big_gamma=0.5, beta=2., exploration_fraction=0.8,
                   exploration_initial_eps=1.0, exploration_final_eps=0.,
-                  small_gamma=0.98, learning_rate=1e-3)
+                  small_gamma=0.98, learning_rate=5e-4)
     agent.learn(total_timesteps=total_timesteps)
     hlp.plot_log(env, fig_title='Agent training')
 
     # Agent evaluation
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
-    hlp.evaluate_agent(env, agent, n_episodes=6,
+    hlp.evaluate_agent(env, agent, n_episodes=20,
                        make_plot=True, fig_title='Agent evaluation')
