@@ -129,15 +129,39 @@ def create_general_Q_from(Q_hh, Q_vh, visible_iterable):
     :param visible_iterable: Contains -1/1 values. """
     Q = dict()
     for k_pair, w in Q_hh.items():
+        # Add flipped couplings (e.g. (8, 12) with weight w, add also
+        # (12, 8) with weight w).
+        # TODO: Do we really have to specify the connections in 'both
+        #  directions'? These are the couplings between the hidden nodes
+        #  specified in the previous for-loop. They are quadratic (rather
+        #  than bias) couplings since they are not self-couplings. Still not
+        #  sure why we have to create both Q[(i, j)] and Q[(j, i)] with same
+        #  weight? Somewhere in the documentation it said that if you prefer
+        #  a symmetric matrix (rather than an upper triangular one), you can
+        #  do that by splitting the weight half between the upper and lower
+        #  triangular entries (that means above we would have to set w/2). I
+        #  think this is confirmed now - check the Qubo_tests.py file to see
+        #  that.
         Q[k_pair] = Q[(k_pair[1], k_pair[0],)] = w
 
+    # What we do here is add the couplings of visible nodes (both actions and
+    # states) as a bias to the nodes of the Chimera graph. The reason why its
+    # a bias is because they are added as self-couplings, through the k_pair[
+    # 1]. The index 1 specifies the index of the node on the Chimera graph.
+    # The index 0 is the visible state / action node. Everything else that
+    # doesn't use self-coupling is treated as quadratic terms of the
+    # minimzation problem (e.g. couplings between hidden nodes defined above)
     for k_pair, w in Q_vh.items():
-
         if (k_pair[1], k_pair[1],) not in Q:
             Q[(k_pair[1], k_pair[1],)] = w * visible_iterable[k_pair[0]]
         else:
             Q[(k_pair[1], k_pair[1],)] += w * visible_iterable[k_pair[0]]
 
+    # TODO: in DWAVE documentation it says that QUBO requires upper-diagonal
+    #  matrix Q (NxN upper triangular matrix) of weights (as dictionary)
+    #  Biases (aka linear coefficients) are self-to-self, i.e. {(1, 1): w} is a
+    #  self coupling that means a bias of w. They correspond to the diagonal
+    #  entries of the Q matrix / dict.
     return Q
 
 
@@ -171,8 +195,7 @@ print('vis_iterable', vis_iterable)
 
 # Next we need to bring the weights dictionary into a form that can be
 # understood by the DWAVE API. For this we use the create_general_Q_from(..)
-# TODO: Not sure what this does and why weights have to be in this form for
-#  the DWAVE API.
+# TODO: what is num_sweeps?
 general_Q = create_general_Q_from(w_hh, w_vh, vis_iterable)
 print('general_Q', general_Q)
 samples = list(SimulatedAnnealingSampler().sample_qubo(
@@ -254,3 +277,4 @@ sum_wplus = w_plus * (sum_hk_hkplus1 + sum_h1_hr)
 average_sum_wplus = np.mean(sum_wplus)
 
 # TODO: do summations also for line 1 in eq. (9)
+samples_np
