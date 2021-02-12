@@ -28,8 +28,8 @@ def print_occurences(samples_np):
         print(f'{s}: {100*c/total_count:.1f} % of occurences')
 
 
-# Case 2, just 2 qubits.
-# Try to solve -3x1 - 2x1x2. We expect solution x1 = 1, x2 = 1
+# Case 1, just 2 qubits.
+# Try to solve -3x1 - 2 x1 x2. We expect solution x1 = 1, x2 = 1
 # Solution table:
 # x1   x2   f(x1, x2)
 # 1     0     -3
