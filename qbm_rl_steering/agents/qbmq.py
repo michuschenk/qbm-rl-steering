@@ -111,6 +111,7 @@ class QFunction(object):
         obtained from either env.reset(), or env.step())
         :param action: chosen action (index)
         :return free energy, samples, and vis_iterable """
+        # TODO: make sure that F is calculated correctly
         vis_iterable = self._create_visible_iterable(state=state, action=action)
 
         general_Q = utl.create_general_Q_from(
@@ -220,7 +221,8 @@ class QBMQN(object):
         for it in tqdm.trange(total_timesteps):
             # Step 1: given the current_state, pick an action randomly (this is
             # to compute current_F). This corresponds to (s1, a1).
-            # TODO: is this really what we have to do? Random action here?
+            # TODO: is this really what we have to do? Random action here? =>
+            #  take instead the greedy action (with epsilon).
             action_1 = env.action_space.sample()
 
             current_F, current_samples, current_vis_iterable = (
