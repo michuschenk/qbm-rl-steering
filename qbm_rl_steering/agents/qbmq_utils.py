@@ -206,6 +206,12 @@ def update_weights(Q_hh, Q_vh, samples, reward, future_F, current_F,
             else:
                 prob_dict[k] = (-1 if s[k] == 0 else 1)
 
+    # TODO: I think there is a bug in the factor -learning_rate * (reward +
+    #  small_gamma * future_F - current_F). This does not correspond to
+    #  equations (11) and (12): as you replace Q = -F, then learning_rate *
+    #  (-reward + small_gamma * future_Q - current_Q) which gives the wrong
+    #  sign to the reward which would have big consequences (the agent would
+    #  actually learn to fail at its task).
     for k_pair in Q_hh.keys():
         Q_hh[k_pair] = (Q_hh[k_pair] - learning_rate *
                         (reward + small_gamma * future_F - current_F) *

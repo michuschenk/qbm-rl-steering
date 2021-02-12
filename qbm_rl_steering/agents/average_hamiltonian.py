@@ -4,6 +4,8 @@ import random
 from neal import SimulatedAnnealingSampler
 from typing import Union
 
+import time
+
 
 # Copied from Mircea
 def initialise_weights():
@@ -149,7 +151,8 @@ def create_general_Q_from(Q_hh, Q_vh, visible_iterable):
         #  Qubo_tests.py file to see that. Just thinking now that maybe
         #  because we anyway are tweaking / updating the weights, this is not
         #  relevant. But we can maybe save computational time by specifying
-        #  fewer couplings?
+        #  fewer couplings? -> yes, e.g. for 50'000 samples we take 7.2 s
+        #  when having double entries vs. 6.3 s without double entries.
         # Q[k_pair] = Q[(k_pair[1], k_pair[0],)] = w
         Q[k_pair] = w
 
@@ -188,7 +191,7 @@ the third dimension)
 # estimate of the average effective Hamiltonian multiplied by the number of
 # replicas of the Ising model we are using.
 r = 10  # 10 replicas
-n_measurements_for_average = 5  # number of measurements for calc. of
+n_measurements_for_average = 1000  # number of measurements for calc. of
 # average
 sample_count = r * n_measurements_for_average
 
@@ -206,8 +209,12 @@ print('vis_iterable', vis_iterable)
 # TODO: what is num_sweeps?
 general_Q = create_general_Q_from(w_hh, w_vh, vis_iterable)
 print('general_Q', general_Q)
+
+tic = time.perf_counter()
 samples = list(SimulatedAnnealingSampler().sample_qubo(
     general_Q, num_reads=sample_count).samples())
+toc = time.perf_counter()
+print(f'Sampling time {toc - tic:0.4f} seconds')
 
 # Samples are provided in a list of dictionaries. Each dictionary corresponds
 # to 1 sample. The dictionary keys are the indices of the hidden nodes [0, 1,
@@ -395,3 +402,53 @@ def get_average_effective_hamiltonian(
 
 print(get_average_effective_hamiltonian(
     samples_np, w_hh, w_vh, vis_iterable, big_gamma, beta))
+
+
+# Update weights, Eqs. (7) and (8)
+# epsilon is the learning_rate, gamma the discount factor
+# Update with += Delta?
+learning_rate = 1e-1
+small_gamma = 0.99
+
+reward = 0.8
+current_F = -25.3
+future_F = -20.1
+
+current_Q = -current_F
+future_Q = -future_F
+
+Q_hh = w_hh.copy()
+Q_vh = w_vh.copy()
+
+print('My method')
+
+# This term is the same for both weights w_hh and w_vh. Calc. only once.
+update_factor = learning_rate * (reward + small_gamma * future_Q - current_Q)
+print('update_factor', update_factor)
+# update_factor -0.46009999999999995
+
+# Update of w_vh
+h_avg = np.mean(np.mean(samples_np, axis=0), axis=0)
+for v, h in w_vh.keys():
+    w_vh[(v, h)] += update_factor * vis_iterable[v] * h_avg[h]
+    print('w_vh', (v, h), vis_iterable[v] * h_avg[h])
+
+# Update of w_hh
+for h, h_prime in w_hh.keys():
+    w_hh[(h, h_prime)] += update_factor * np.mean(
+        samples_np[:, :, h] * samples_np[:, :, h_prime])
+    print('w_hh', (h, h_prime), np.mean(
+        samples_np[:, :, h] * samples_np[:, :, h_prime]))
+
+print('final result')
+print(w_vh)
+print(w_hh)
+
+print('Mirceas method')
+utl.update_weights(Q_hh, Q_vh, samples, reward, future_F, current_F,
+                   vis_iterable, learning_rate, small_gamma)
+# Mircea, factor -0.6201000000000001
+
+print('final result')
+print(Q_vh)
+print(Q_hh)
