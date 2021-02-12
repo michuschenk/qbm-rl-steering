@@ -1,72 +1,50 @@
 import math
 import numpy as np
-from typing import Dict, Tuple, Optional, Union
+from typing import Dict, Tuple, Optional
 
 from neal import SimulatedAnnealingSampler
 
 
-def remap_binary_vector(
-        vec: Union[Tuple, np.ndarray], mapping: Dict = {0: -1}) -> Tuple:
+def get_visible_nodes_array(state: np.ndarray, action: int,
+                            n_bits_action_space: int = 2) -> np.ndarray:
     """
-    Remap values in vec (binary vector) according to the mapping dict. Default
-    mapping means that 0s are transformed into -1s.
-    :param vec: input np.ndarray or tuple that needs to be converted.
-    :param mapping dictionary that contains the remapping of the values
-    :return remapped vector as tuple. """
-    vec = np.array(vec)
-    for inp, out in mapping.items():
-        vec[vec == inp] = out
-    return tuple(vec)
-
-
-def make_action_binary(
-        action_index: int, n_bits_action_space: int = 2) -> Tuple:
+    Take state (e.g. directly from environment, in binary encoding), and action
+    index (following env.action_map), and concatenate them to the
+    visible_nodes_tuple. Then convert all 0s to -1s to be compatible with the
+    spin states {-1, +1}.
+    :param state: state as binary-encoded vector {0, 1}, obtained directly from
+    the environment (either through .reset(), or .step()).
+    :param action: index of action as used in environment, see env.action_map
+    keys.
+    :param n_bits_action_space: number of bits used to encode the discrete
+    action space [given by ceil(log2(n_actions))].
+    :return binary state-action numpy array with entries {-1, +1}.
     """
-    Similar to make_state_discrete_binary. Convert action_index to a
-    binary vector using 0s and 1s. Conversion of 0s to -1s will be done in a
-    separate function.
-    :param action_index: index of action (integer). See which index
-    corresponds to which action in env.action_map.
-    :param n_bits_action_space: number of bits required to describe action
-    space in binary.
-    :return binary vector that encodes the action_index """
+    # Turn action index into binary vector
     binary_fmt = f'0{n_bits_action_space}b'
-    action_binary = tuple([int(i) for i in format(action_index, binary_fmt)])
-    return action_binary
+    action_binary = [int(i) for i in format(action, binary_fmt)]
+    visible_nodes = np.array(list(state) + action_binary)
 
-
-def get_visible_nodes_tuple(
-        state: np.ndarray, action: int, n_bits_action_space: int = 2) -> Tuple:
-    """
-    Take state (e.g. directly from environment), and action_index (
-    following env.action_map), and concatenate them to the visible_iterable
-    tuple required for the create_general_Q_from(..) function. This also
-    converts all 0s appearing in state and action_index (once made binary) to
-    -1s.
-    :param state: state in binary-encoded vector, as obtained directly from
-    the environment (either through .reset(), or .step())
-    :param action: index of action as used in environment
-    :return tuple, concatenation of state and action, following the
-    convention of Mircea's code on QBM. """
-    s = remap_binary_vector(state)
-    a = remap_binary_vector(make_action_binary(action, n_bits_action_space))
-    return s + a
+    # Turn all 0s in binary state-action vector into -1s
+    visible_nodes[visible_nodes == 0] = -1
+    return visible_nodes
 
 
 def create_general_qubo_matrix(
-        w_hh: Dict, w_vh: Dict, visible_nodes: Tuple) -> Dict:
+        w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray) -> Dict:
     """
     Creates a dictionary of the coupling weights that can be used with the
     DWAVE API. It corresponds to an upper triangular matrix, where the
-    self-couplings (linear coefficients) are on the diagonal, i.e. (i,
-    i) keys, and the quadratic coefficients are on the off-diagonal, i.e. (i, j)
-    keys with i < j. As the visible nodes are clamped, they are incorporated
-    into biases, i.e. self-couplings of the hidden nodes they are connected to.
+    self-coupling weights (linear coefficients) are on the diagonal, i.e.
+    (i, i) keys, and the quadratic coefficients are on the off-diagonal,
+    i.e. (i, j) keys with i < j. As the visible nodes are clamped, they are
+    incorporated into biases, i.e. self-coupling weights of the hidden nodes
+    they are connected to.
     :param w_hh: Contains key pairs (i, j) where i < j and the values
     are the coupling weights between the hidden nodes i and j.
     :param w_vh: Contains key pairs (visible, hidden) and the values are the
     coupling weights between visible and hidden nodes.
-    :param visible_nodes: tuple of inputs, i.e. visible nodes, given by
+    :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
     binary vectors (with -1 and +1) of the states and action vectors
     concatenated (length: n_bits_observation_space + n_bits_action_space).
     :return Dictionary of the QUBO upper triangular Q-matrix that describes the
@@ -74,13 +52,14 @@ def create_general_qubo_matrix(
     """
     qubo_matrix = dict()
 
-    # Add hidden-hidden couplings to QUBO matrix
+    # Add hidden-hidden coupling weights to QUBO matrix
     # (note that QUBO matrix is no longer made symmetrical to reduce the
-    # number of couplings -> speeds up the sampling a bit)
+    # number of coupling weights -> speeds up the sampling a bit)
     for k, w in w_hh.items():
         qubo_matrix[k] = w
 
-    # Self-couplings; clamp visible nodes to hidden nodes they are connected to
+    # Self-coupling weights; clamp visible nodes to hidden nodes they are
+    # connected to
     for k, w in w_vh.items():
         if (k[1], k[1]) not in qubo_matrix:
             qubo_matrix[(k[1], k[1])] = w * visible_nodes[k[0]]
@@ -92,18 +71,24 @@ def create_general_qubo_matrix(
 def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
                      n_replicas: int) -> np.ndarray:
     """
-    Samples are provided in a list of dictionaries. Each dictionary
-    corresponds to 1 sample. The dictionary keys are the indices of the hidden
-    nodes [0, 1,..., 15], and the values are the corresponding spins {0, 1}.
-    We will work with {-1, 1} rather than {0, 1}, so we remap all the sampled
-    spin configurations. We also turn the list of dictionaries into a 3D
-    numpy array, where axis 0 is the index of the 'independent measurement'
-    for averaging the effective Hamiltonian, axis 1 is index k (replicas,
-    i.e. 3D extension of the Ising model), and axis 2 is the index of the
-    hidden nodes, after reshaping.
-    :param qubo_matrix: 
-    :param num_reads: 
-    :return: 
+    Run the AnnealingSampler with the DWAVE QUBO method and generate all the
+    samples (= spin configurations at hidden nodes of Chimera graph,
+    with values {-1, +1}). The DWAVE sample() method provides samples in a
+    list of dictionaries. Each dictionary corresponds to 1 sample. The
+    dictionary keys are the indices of the hidden nodes [0, 1,..., 15],
+    and the values are the corresponding spins {0, 1}. We will work with {-1, 1}
+    rather than {0, 1}, so we remap all the sampled spin configurations. We
+    also turn the list of dictionaries into a 3D numpy array.
+    :param qubo_matrix: Dictionary of coupling weights that corresponds to an
+    upper triangular matrix, where the self-couplings (linear coefficients)
+    are on the diagonal and the quadratic coefficients are on the off-diagonal.
+    :param n_meas_for_average: number of 'independent measurements' that will
+    then be used to calculate the average effective Hamiltonian.
+    :param n_replicas: number of replicas in the 3D extension of the Ising
+    model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf .
+    :return: 3D numpy array of all the samples. axis 0 is the index of the
+    'independent measurement' for averaging the effective Hamiltonian,
+    axis 1 is index k (replicas), and axis 2 is the index of the hidden nodes.
     """
     # TODO: what is the num_sweeps argument in the DWAVE sample method?
     # TODO: Is it OK to treat replicas in the same way as the 'independent
@@ -119,7 +104,7 @@ def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
 
 
 def get_average_effective_hamiltonian(
-        samples: np.ndarray, w_hh: Dict, w_vh: Dict, visible_nodes: Tuple,
+        samples: np.ndarray, w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray,
         big_gamma: float, beta: float) -> float:
     """
     This method calculates the average effective Hamiltonian as given in
@@ -127,24 +112,24 @@ def get_average_effective_hamiltonian(
     obtained from DWAVE QUBO sample method.
     :param samples: samples returned by the DWAVE sample() method, but
     converted to numpy array and reshaped to
-    (n_meas_for_average, n_replicas, n_nodes). The samples contain the spin
-    states (1 or -1) of all the hidden nodes.
-    :param w_hh: coupling dictionary (quadratic coefficients) between the
-    hidden nodes. The key is (h, h') where h and h' are in range [0, ..,
-    n_nodes] and h != h' (no self-coupling here).
-    :param w_vh: couplings between the visible nodes (states and actions) and
-    the corresponding hidden nodes. The key is (v, h), where v is the index
-    of the visible node in range [0, .., n_bits_observation_space, .. ,
-    n_bits_observation_space + n_bits_action_space]. h is in range [0, ..,
-    n_nodes].
-    :param visible_nodes: tuple of inputs, i.e. visible nodes, given by
-    binary vectors (with -1 and +1) of the states and action vectors
-    concatenated (length: n_bits_observation_space + n_bits_action_space).
-    :param big_gamma: hyperparameter; strength of the transverse field (
-    virtual, average
-    value), see paper for more details.
+    (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
+    spin states (1 or -1) of all the hidden nodes.
+    :param w_hh: dictionary of coupling weights (quadratic coefficients)
+    between the hidden nodes of the Chimera graph. The key is (h, h') where h
+    and h' are in range [0, .., n_hidden_nodes] and h != h' (no self-coupling
+    here).
+    :param w_vh: dictionary of coupling weights between the visible nodes
+    (states-action vector) and the corresponding hidden nodes they are
+    connected to. The key is (v, h), where v is the index of the visible node
+    in range [0, .., n_bits_observation_space, .. , n_bits_observation_space
+    + n_bits_action_space]. h is in range [0, .., n_hidden_nodes].
+    :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
+    binary vectors ({-1, +1}) of the concatenated states and action vectors
+    (length: n_bits_observation_space + n_bits_action_space).
+    :param big_gamma: hyperparameter; strength of the transverse field
+    (virtual, average value), see paper for more details.
     :param beta: hyperparameter; inverse temperature used for simulated
-    annealing
+    annealing, see paper for more details.
     :return: single float; effective Hamiltonian averaged over the individual
     measurements.
     """
@@ -182,44 +167,34 @@ def get_average_effective_hamiltonian(
     return float(np.mean(h_sum_12 + h_sum_3))
 
 
-def _nodes_of_3d_bm_as_tuple(configuration):
+def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
+                    beta: float) -> float:
     """
-    Converts samples corresponding to all replica from 1 configuration = 3D
-    Boltzmann machine into 1 tuple with all measurements
-    :param configuration: samples corresponding to all replica from 1
-    configuration = 3D Boltzmann machine
-    :return: tuple with all measurements
+    We count the number of unique spin configurations on the 3D extended
+    Ising model (torus), i.e. on the n_replicas * n_hidden_nodes nodes and
+    calculate the probability of occurrence for each spin configuration
+    through mean values.
+    :param samples: samples returned by the DWAVE sample() method, but
+    converted to numpy array and reshaped to
+    (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
+    spin states (1 or -1) of all the hidden nodes.
+    :param avg_eff_hamiltonian: average effective Hamiltonian according to
+    Eq. (9) in paper: https://arxiv.org/pdf/1706.00074.pdf .
+    :param beta: hyperparameter; inverse temperature used for simulated
+    annealing, see paper for more details.
+    :return: free energy of the QBM defined according to the paper.
     """
-    config = ()
-    for replica in configuration:
-        config = config + tuple(replica.values())
-    return config
+    # Return the number of occurrences of unique spin configurations along
+    # axis 0, i.e. along index of independent measurements
+    _, n_occurrences = np.unique(samples, axis=0, return_counts=True)
+    mean_n_occurrences = n_occurrences / float(np.sum(n_occurrences))
+    a_sum = np.sum(mean_n_occurrences * np.log10(mean_n_occurrences))
 
-
-def get_free_energy(average_effective_hamiltonian: float, samples: dict,
-                    replica_count: int, average_size: int, beta: float):
-    configurations = [samples[x:x + replica_count]
-                      for x in range(0, len(samples), replica_count)]
-    prob_dict = dict()
-
-    for conf in configurations:
-        conf_tuple = _nodes_of_3d_bm_as_tuple(conf)
-        if conf_tuple in prob_dict:
-            prob_dict[conf_tuple] += 1
-        else:
-            prob_dict[conf_tuple] = 1
-
-    a_sum = 0
-    for n_occurrence_of_conf in prob_dict.values():
-        mean_occurence_of_conf = n_occurrence_of_conf / average_size
-        a_sum = a_sum + (mean_occurence_of_conf * math.log10(
-            mean_occurence_of_conf))
-
-    return average_effective_hamiltonian + a_sum / beta
+    return avg_eff_hamiltonian + a_sum / beta
 
 
 def update_weights(samples: np.ndarray, w_hh: Dict, w_vh: Dict,
-                   visible_nodes: Tuple, current_Q: float, future_Q: float,
+                   visible_nodes: np.ndarray, current_Q: float, future_Q: float,
                    reward: float, learning_rate: float, small_gamma: float,
                    in_place: bool = True) -> Optional[Tuple[Dict, Dict]]:
     """
@@ -228,16 +203,16 @@ def update_weights(samples: np.ndarray, w_hh: Dict, w_vh: Dict,
     https://arxiv.org/pdf/1706.00074.pdf
     :param samples: samples returned by the DWAVE sample() method,
     but converted to numpy array and reshaped to
-    (n_meas_for_average, n_replicas, n_nodes). The samples contain the spin
-    states (1 or -1) of all the hidden nodes.
-    :param w_hh: dictionary of couplings between the hidden nodes of the
+    (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
+    spin states (1 or -1) of all the hidden nodes.
+    :param w_hh: dictionary of coupling weights between the hidden nodes of the
     Chimera graph, Fig. 2 in paper.
-    :param w_vh: dictionary of couplings between visible nodes (state and
+    :param w_vh: dictionary of coupling weights between visible nodes (state and
     action nodes) and corresponding hidden nodes of the Chimera graph,
     Fig. 2 in paper.
-    :param visible_nodes: tuple of inputs, i.e. visible nodes, given by
-    binary vectors (with -1 and +1) of the states and action vectors
-    concatenated (length: n_bits_observation_space + n_bits_action_space).
+    :param visible_nodes: numpy array of visible nodes, given by binary
+    vectors (with -1 and +1) of the states and action vectors concatenated
+    (length: n_bits_observation_space + n_bits_action_space).
     :param current_Q: Q function value at time step n, Q(s_n, a_n)
     :param future_Q: Q function value at time step n+1, Q(s_n+1, a_n+1)
     :param reward: RL reward of current step, r_n(s_n, a_n)
