@@ -224,3 +224,34 @@ def update_weights(Q_hh, Q_vh, samples, reward, future_F, current_F,
                         prob_dict[k_pair[1]] / len(samples))
 
     return Q_hh, Q_vh
+
+
+def _nodes_of_3D_BM_as_tuple(configuration):
+    """
+    converts samples corresponding to all replica from 1 configuration = 3D Boltzmann machine into 1 tuple with all measurements
+    :param configuration: samples corresponding to all replica from 1 configuration = 3D Boltzmann machine
+    :return: tuple of with all measurements
+    """
+    config = ()
+    for replica in configuration:
+        config = config + tuple(replica.values())
+    return config
+
+def get_free_energy(average_effective_hamiltonian, samples, replica_count, average_size,beta):
+    configurations = [samples[x:x + replica_count] for x in range(0, len(samples), replica_count)]
+    prob_dict = dict()
+
+    for conf in configurations:
+        conf_tuple = _nodes_of_3D_BM_as_tuple(conf)
+        if conf_tuple in prob_dict:
+            prob_dict[conf_tuple] += 1
+        else:
+            prob_dict[conf_tuple] = 1
+
+    a_sum = 0
+
+    for n_occurrence_of_conf in prob_dict.values():
+        mean_occurence_of_conf = n_occurrence_of_conf / average_size
+        a_sum = a_sum + mean_occurence_of_conf * math.log10(mean_occurence_of_conf)
+
+    return average_effective_hamiltonian + a_sum/beta
