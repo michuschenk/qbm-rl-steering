@@ -83,14 +83,42 @@ def get_3d_hamiltonian_average_value(
         j_sample = i_sample
         a = i_sample + replica_count - 1
 
+        # This loop makes the sum of the effective Hamiltonian for one replica.
+        # I think the name of average_size is maybe misleading as it contains
+        # the product of n_measurements_for_average * n_replicas. For better
+        # readability I would probably separate the two summations.
         while j_sample < a:
             added_set = set()
+
             for k_pair, v_weight in Q.items():
                 if k_pair[0] == k_pair[1]:
+                    # These are the bias terms, i.e. the sum over v,
+                    # h? I think so. here, v_weight already is the product of
+                    # w_vh * v (that's how we defined the biases in the
+                    # general_Q dictionary). So we just multiply by the
+                    # sample h_k (?) but then why is it k_pair[0], and not
+                    # k_pair[1] ? Ah it doesn't matter since k_pair[0] ==
+                    # k_pair[1].
+                    # TODO: but is this correct? state is vector of 1 and -1,
+                    #  that we multiplied to the original Q_vh coupling
+                    #  and SUMMED UP over all the bits. But in eq. 9 I think
+                    #  we are using the coupling weights w_vh. Maybe it
+                    #  doesn't matter again, because it eliminates the sum
+                    #  over v. Not sure, I will implement it in a different
+                    #  way I think.
                     new_h_0 = new_h_0 + v_weight * (
                         -1 if samples[j_sample][k_pair[0]] == 0 else 1)
                 else:
-
+                    # This is for the first sum term in H_eff, where we work
+                    # with the couplings between hidden nodes (no
+                    # self-coupling here, so sum over h, h', where h != h'?).
+                    # Here the v_weight is really just the coupling w_hh',
+                    # so we need to multiply by the spin values of the two
+                    # nodes h_k, h'_k. With the added_set, we also avoid
+                    # counting the weights * couplings double. I think this
+                    # stems from the way general_Q is built (with copies of
+                    # the couplings, which I think I wouldn't use in the
+                    # first place).
                     if k_pair not in added_set and (
                     k_pair[1], k_pair[0],) not in added_set:
                         # if True:
@@ -101,14 +129,23 @@ def get_3d_hamiltonian_average_value(
                                                k_pair[1]] == 0 else 1)
                         added_set.add(k_pair)
 
+            # This is for the sum on the second line of eq. (9). Here we go
+            # over all the nodes of the jth sample and sum up the product of
+            # neighbouring nodes.
             for node_index in samples[j_sample].keys():
                 new_h_1 = new_h_1 \
                           + (-1 if samples[j_sample][node_index] == 0 else 1) \
                           * (-1 if samples[j_sample + 1][
                                        node_index] == 0 else 1)
-
             j_sample += 1
 
+        # Why are we doing this again here, outside of loop over j_sample? Is
+        # this because we are missing the last j_sample of this replica? Then
+        # why not set a = i_sample + replica_count (instead of that -1) and
+        # just let the loop do the trick? Now I see that there is a
+        # difference in the last block (for the new_h_1 sum), but it doesn't
+        # make total sense to me. The j_sample+1 is replaced by i_sample (
+        # which probably corresponds to h_1 ?)
         added_set = set()
         for k_pair, v_weight in Q.items():
             if k_pair[0] == k_pair[1]:
