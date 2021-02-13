@@ -237,7 +237,7 @@ def _nodes_of_3D_BM_as_tuple(configuration):
         config = config + tuple(replica.values())
     return config
 
-def get_free_energy(average_effective_hamiltonian, samples, replica_count, average_size,beta):
+def get_free_energy_of_BM(average_effective_hamiltonian, samples, replica_count, average_size,beta):
     configurations = [samples[x:x + replica_count] for x in range(0, len(samples), replica_count)]
     prob_dict = dict()
 
