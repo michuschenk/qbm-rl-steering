@@ -106,7 +106,7 @@ if __name__ == "__main__":
     # Scenarios for parameter scans
     scan_scenarios = {
         'exploration_fraction': np.arange(0., 1.1, 0.1),
-        'n_steps_train': np.arange(200, 3300, 500),
+        'n_steps_train': np.arange(500, 40500, 10000),
         'target_update_interval': np.arange(500, 3100, 500),
         'max_steps_per_episode': np.arange(10, 45, 5),
         'gamma': np.arange(0.9, 0.991, 0.02),
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         'net_arch_hidden_layers': np.array([1, 2, 3]),
         'single_default': np.array([1])
     }
-    scenario = 'single_default'
+    scenario = 'n_steps_train'
     scan_values = scan_scenarios[scenario]
 
     # Run the scan (adapt the correct kwarg)
@@ -126,10 +126,10 @@ if __name__ == "__main__":
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=dict(
                 exploration_fraction=0.8,
-                policy_kwargs=dict(net_arch=[128]*3),
-                gamma=0.99),
-            n_steps_train=2200, max_steps_per_episode=20, make_plots=True,
-            n_evaluations=val)
+                policy_kwargs=dict(net_arch=[8]*2),
+                gamma=0.95),
+            n_steps_train=val, max_steps_per_episode=15, make_plots=False,
+            n_evaluations=5)
 
     # Final plot
     fig = plt.figure(1, figsize=(7, 5.5))
