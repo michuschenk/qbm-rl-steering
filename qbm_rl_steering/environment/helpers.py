@@ -146,6 +146,7 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
     :param n_episodes: number of episodes used to evaluate agent
     :param make_plot: flag to decide whether to show plots or not
     :param fig_title: figure title """
+    # TODO: implement progress bar with tqdm
     episode_count = 0
     env.clear_log()
     obs = env.reset()

@@ -1,6 +1,7 @@
 import math
+import random
 import numpy as np
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 
 from neal import SimulatedAnnealingSampler
 
@@ -97,6 +98,8 @@ def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
     samples = list(SimulatedAnnealingSampler().sample_qubo(
         Q=qubo_matrix, num_reads=num_reads).samples())
 
+    # TODO: why do we shuffle them?
+    random.shuffle(samples)
     samples = np.array([list(s.values()) for s in samples])
     samples[samples == 0] = -1
     samples = samples.reshape((n_meas_for_average, n_replicas, -1))
@@ -127,9 +130,9 @@ def get_average_effective_hamiltonian(
     binary vectors ({-1, +1}) of the concatenated states and action vectors
     (length: n_bits_observation_space + n_bits_action_space).
     :param big_gamma: hyperparameter; strength of the transverse field
-    (virtual, average value), see paper for more details.
+    (virtual, average value), see paper for details.
     :param beta: hyperparameter; inverse temperature used for simulated
-    annealing, see paper for more details.
+    annealing, see paper for details.
     :return: single float; effective Hamiltonian averaged over the individual
     measurements.
     """
@@ -193,56 +196,203 @@ def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
     return avg_eff_hamiltonian + a_sum / beta
 
 
-def update_weights(samples: np.ndarray, w_hh: Dict, w_vh: Dict,
-                   visible_nodes: np.ndarray, current_Q: float, future_Q: float,
-                   reward: float, learning_rate: float, small_gamma: float,
-                   in_place: bool = True) -> Optional[Tuple[Dict, Dict]]:
-    """
-    Calculates the TD(0) learning step, i.e. the updates of the coupling
-    dictionaries w_hh, w_vh according to Eqs. (11) and (12) in the paper:
-    https://arxiv.org/pdf/1706.00074.pdf
-    :param samples: samples returned by the DWAVE sample() method,
-    but converted to numpy array and reshaped to
-    (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
-    spin states (1 or -1) of all the hidden nodes.
-    :param w_hh: dictionary of coupling weights between the hidden nodes of the
-    Chimera graph, Fig. 2 in paper.
-    :param w_vh: dictionary of coupling weights between visible nodes (state and
-    action nodes) and corresponding hidden nodes of the Chimera graph,
-    Fig. 2 in paper.
-    :param visible_nodes: numpy array of visible nodes, given by binary
-    vectors (with -1 and +1) of the states and action vectors concatenated
-    (length: n_bits_observation_space + n_bits_action_space).
-    :param current_Q: Q function value at time step n, Q(s_n, a_n)
-    :param future_Q: Q function value at time step n+1, Q(s_n+1, a_n+1)
-    :param reward: RL reward of current step, r_n(s_n, a_n)
-    :param learning_rate: note that this corresponds to the parameter epsilon in
-    the paper
-    :param small_gamma: discount factor
-    :param in_place: flag to decide whether update should be done in place
-    (i.e. nothing is returned), or not (new coupling dictionaries will be
-    returned, original dictionaries are left untouched).
-    :return: Either None or tuple of the new coupling dictionaries depending
-    on the flag in_place.
-    """
-    # If operation not done in place, need to make a copy first
-    w_hh_, w_vh_ = w_hh, w_vh
-    if not in_place:
-        w_hh_, w_vh_ = w_hh.copy(), w_vh.copy()
+class QFunction(object):
+    def __init__(self, n_bits_observation_space: int,
+                 n_bits_action_space: int, possible_actions: list,
+                 learning_rate: float, small_gamma: float, n_replicas: int,
+                 n_meas_for_average: int, big_gamma: float,
+                 beta: float) -> None:
+        """
+        Implementation of the Q function (state-action value function) using
+        DWAVE neal sampler.
+        :param n_bits_observation_space: number of bits used to encode
+        observation space of environment
+        :param n_bits_action_space: number of bits required to encode the
+        actions that are possible in the given environment
+        :param possible_actions: list of possible action indices
+        :param learning_rate: RL. parameter, learning rate for update of
+        coupling weights of the Chimera graph.
+        :param small_gamma: RL parameter, discount factor cumulative rewards.
+        :param n_replicas: number of replicas in the 3D extension of the Ising
+        model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf
+        :param n_meas_for_average: number of 'independent measurements' that
+        will then be used to calculate the average effective Hamiltonian.
+        :param big_gamma:  hyperparameter; strength of the transverse field
+        (virtual, average value), see paper for more details.
+        :param beta: hyperparameter; inverse temperature used for simulated
+        annealing, see paper for details.
+        """
+        self.n_replicas = n_replicas
+        self.n_meas_for_average = n_meas_for_average
+        self.big_gamma = big_gamma
+        self.beta = beta
 
-    # This term is the same for both weight updates w_hh and w_vh
-    update_factor = learning_rate * (
-            reward + small_gamma * future_Q - current_Q)
+        self.learning_rate = learning_rate
+        self.small_gamma = small_gamma
 
-    # Update of w_vh, Eq. (11)
-    h_avg = np.mean(np.mean(samples, axis=0), axis=0)
-    for v, h in w_vh_.keys():
-        w_vh_[(v, h)] += update_factor * visible_nodes[v] * h_avg[h]
+        self.n_bits_observation_space = n_bits_observation_space
+        self.n_bits_action_space = n_bits_action_space
+        self.possible_actions = possible_actions
+        self.w_hh, self.w_vh = self._initialise_weights()
 
-    # Update of w_hh, Eq. (12)
-    for h, h_prime in w_hh_.keys():
-        w_hh_[(h, h_prime)] += update_factor * np.mean(
-            samples[:, :, h] * samples[:, :, h_prime])
+    def _initialise_weights(self) -> Tuple[Dict, Dict]:
+        """
+        Initialise the coupling weights of the Chimera graph, i.e. both
+        hidden-hidden couplings and visible-hidden couplings.
+        """
+        # ==============================
+        # COUPLINGS BETWEEN HIDDEN NODES
+        # This loop initializes weights to fully connect the nodes in the two
+        # unit cells of the Chimera graph (see Fig. 2 in the paper:
+        # https://arxiv.org/pdf/1706.00074.pdf). The indexing of the nodes is
+        # starting at the top left (node 0) and goes down vertically (blue
+        # nodes), and then to the right (first red node is index 4). These
+        # are 32 couplings = 2 * 4**2.
+        w_hh = dict()
+        for i, ii in zip(tuple(range(4)), tuple(range(8, 12))):
+            for j, jj in zip(tuple(range(4, 8)), tuple(range(12, 16))):
+                w_hh[(i, j)] = 2 * random.random() - 1
+                w_hh[(ii, jj)] = 2 * random.random() - 1
 
-    if not in_place:
-        return w_hh_, w_vh_
+        # This loop connects the 4 red nodes of the first unit cell of the
+        # Chimera graph on the left (Fig. 2) to the blue nodes of the second
+        # unit on the right, i.e. node 4 to node 12; node 5 to node 13,
+        # etc. These are 4 additional couplings.
+        for i, j in zip(tuple(range(4, 8)), tuple(range(12, 16))):
+            w_hh[(i, j)] = 2 * random.random() - 1
+
+        # We get a total of 32 + 4 = 36 hidden couplings defined by w_hh.
+
+        # ==============================
+        # COUPLINGS BETWEEN VISIBLE [the 'input' (= state layer) and the
+        # 'output' (= action layer) of a 'classical' Q-net] AND THE HIDDEN NODES
+        w_vh = dict()
+
+        # Dense connection between the state nodes (visible) and the BLUE
+        # hidden nodes (all 8 of them) of the Chimera graph. Blue nodes have
+        # indices [0, 1, 2, 3, 12, 13, 14, 15]. We hence have connections
+        # between the state nodes [0, 1, ..., n_bits_observation_space] to
+        # all of the blue nodes. This is n_bits_observation_space * 8 = 64
+        # couplings (here).
+        for j in (tuple(range(4)) + tuple(range(12, 16))):
+            for i in range(self.n_bits_observation_space):
+                w_vh[(i, j)] = 2 * random.random() - 1
+
+        # Dense connection between the action nodes (visible) and the RED hidden
+        # nodes (all 8 of them) of the Chimera graph. Red nodes have indices
+        # [4, 5, 6, 7, 8, 9, 10, 11]. We hence have connections between the
+        # action nodes [n_bits_observation_space, ..,
+        # n_bits_observation_space + n_bits_action_space] (here: [8, 9]) to all
+        # of the red nodes. This is n_bits_action_space * 8 = 16 couplings
+        # (here).
+        for j in (tuple(range(4, 8)) + tuple(range(8, 12))):
+            for i in range(
+                    self.n_bits_observation_space,
+                    self.n_bits_observation_space + self.n_bits_action_space):
+                w_vh[(i, j)] = 2 * random.random() - 1
+
+        # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
+        return w_hh, w_vh
+
+    def calculate_q_value(self, state: np.ndarray, action: int) -> \
+            Tuple[float, np.ndarray, np.ndarray]:
+        """
+        Based on state and chosen action, calculate the free energy,
+        samples and vis_iterable.
+        :param state: state the environment is in (binary vector, directly
+        obtained from either env.reset(), or env.step())
+        :param action: chosen action (index)
+        :return free energy, samples, and visible_nodes.
+        """
+        visible_nodes = get_visible_nodes_array(state=state, action=action)
+        qubo_matrix = create_general_qubo_matrix(
+            self.w_hh, self.w_vh, visible_nodes)
+
+        samples = get_qubo_samples(
+            qubo_matrix, self.n_meas_for_average, self.n_replicas)
+
+        avg_eff_hamiltonian = get_average_effective_hamiltonian(
+            samples, self.w_hh, self.w_vh, visible_nodes, self.big_gamma,
+            self.beta)
+
+        free_energy = get_free_energy(samples, avg_eff_hamiltonian, self.beta)
+        q_value = -free_energy
+
+        return q_value, samples, visible_nodes
+
+    def follow_policy(
+            self, state: np.ndarray, epsilon: float) -> \
+            Tuple[int, float, np.ndarray, np.ndarray]:
+        """
+        Follow the epsilon-greedy policy to get the next action. With
+        probability epsilon we pick a random action, and with probability
+        (1 - epsilon) we pick the action greedily, i.e. such that
+        a = argmax_a Q(s, a).
+        :param state: state that the environment is in (binary vector, directly
+        obtained from either env.reset(), or env.step()).
+        :param epsilon: probability for choosing random action.
+        :return: chosen action index, q_value, QUBO samples, state-action
+        values of visible_nodes
+        """
+        if np.random.random() < epsilon:
+            # Pick action randomly
+            action = random.choice(self.possible_actions)
+            q_value, samples, visible_nodes = self.calculate_q_value(
+                state, action)
+            return action, q_value, samples, visible_nodes
+        else:
+            # Pick action greedily
+            # Since the Chimera graph (QBM) does not offer an input ->
+            # output layer structure in the classical Q-net sense, we have to
+            # loop through all the actions to calculate the Q value for every
+            # action to then pick the argmax_a Q
+            max_dict = {'q_value': float('-inf'), 'action': None,
+                        'samples': None, 'visible_nodes': None}
+
+            for action in self.possible_actions:
+                q_value, samples, visible_nodes = self.calculate_q_value(
+                    state, action)
+
+                # TODO: what needs to be done is to pick action randomly in
+                #  case there are several actions with the same Q values.
+                if max_dict['q_value'] < q_value:
+                    max_dict['q_value'] = q_value
+                    max_dict['action'] = action
+                    max_dict['samples'] = samples
+                    max_dict['visible_nodes'] = visible_nodes
+
+            return (max_dict['action'], max_dict['q_value'],
+                    max_dict['samples'], max_dict['visible_nodes'])
+
+    def update_weights(
+            self, samples: np.ndarray, visible_nodes: np.ndarray,
+            current_Q: float, future_Q: float, reward: float) -> None:
+        """
+        Calculates the TD(0) learning step, i.e. the updates of the coupling
+        dictionaries w_hh, w_vh according to Eqs. (11) and (12) in the paper:
+        https://arxiv.org/pdf/1706.00074.pdf
+        :param samples: samples returned by the DWAVE sample() method,
+        but converted to numpy array and reshaped to
+        (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
+        spin states (1 or -1) of all the hidden nodes.
+        :param visible_nodes: numpy array of visible nodes, given by binary
+        vectors (with -1 and +1) of the states and action vectors concatenated
+        (length: n_bits_observation_space + n_bits_action_space).
+        :param current_Q: Q function value at time step n, Q(s_n, a_n)
+        :param future_Q: Q function value at time step n+1, Q(s_n+1, a_n+1)
+        :param reward: RL reward of current step, r_n(s_n, a_n)
+        :return None
+        """
+        # This term is the same for both weight updates w_hh and w_vh
+        update_factor = self.learning_rate * (
+                reward + self.small_gamma * future_Q - current_Q)
+
+        # Update of w_vh, Eq. (11)
+        h_avg = np.mean(np.mean(samples, axis=0), axis=0)
+        for v, h in self.w_vh.keys():
+            self.w_vh[(v, h)] += update_factor * visible_nodes[v] * h_avg[h]
+
+        # Update of w_hh, Eq. (12)
+        for h, h_prime in self.w_hh.keys():
+            self.w_hh[(h, h_prime)] += update_factor * np.mean(
+                samples[:, :, h] * samples[:, :, h_prime])

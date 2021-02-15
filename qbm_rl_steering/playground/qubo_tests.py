@@ -131,8 +131,3 @@ samples_np = solve_problem(Q)
 # print('Case 2d, samples_np', samples_np)
 print('\nCase 2d')
 print_occurences(samples_np)
-
-
-# CONFIRMED!
-# TODO: this means that I think there is a bug in the create_general_Q_from
-#  method.
