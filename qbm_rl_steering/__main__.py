@@ -30,10 +30,16 @@ def init_agent(env: TargetSteeringEnv, scan_params: dict = None) -> DQN:
     or arguments to overwrite (this can also be overwriting the policy_kwargs)
     :return new instance of DQN agent. """
     policy_kwargs = dict(net_arch=[128, 128])
+    # dqn_kwargs = dict(
+    #     policy='MlpPolicy', env=env, verbose=0, learning_starts=0,
+    #     policy_kwargs=policy_kwargs, exploration_initial_eps=1.0,
+    #     exploration_final_eps=0.0, exploration_fraction=0.5, train_freq=3,
+    #     learning_rate=5e-4, target_update_interval=100, tau=0.05)
     dqn_kwargs = dict(
         policy='MlpPolicy', env=env, verbose=0, learning_starts=0,
         policy_kwargs=policy_kwargs, exploration_initial_eps=1.0,
-        exploration_final_eps=0., exploration_fraction=0.5)
+        exploration_final_eps=0.0, exploration_fraction=0.5, train_freq=3,
+        learning_rate=5e-4, target_update_interval=100, tau=0.05)
 
     # Update dqn_kwargs dictionary by adding (or replacing) scan parameters.
     if scan_params is not None:
@@ -91,6 +97,13 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
             test_env, test_agent, n_episodes=n_episodes_test,
             make_plot=make_plots, fig_title='Agent test after training')
 
+        # Show Q-net of a trained agent
+        if make_plots:
+            env = TargetSteeringEnv(
+                N_BITS_OBSERVATION_SPACE,
+                max_steps_per_episode=max_steps_per_episode)
+            hlp.plot_q_net_response(env, agent, 'Q-net response, trained agent')
+
         # Calculate performance metrics
         metrics[:, j] = hlp.calculate_performance_metrics(test_env)
 
@@ -106,13 +119,14 @@ if __name__ == "__main__":
     # Scenarios for parameter scans
     scan_scenarios = {
         'exploration_fraction': np.arange(0., 1.1, 0.1),
-        'n_steps_train': np.arange(500, 40500, 10000),
+        'n_steps_train': np.arange(5000, 21000, 5000),
         'target_update_interval': np.arange(500, 3100, 500),
         'max_steps_per_episode': np.arange(10, 45, 5),
         'gamma': np.arange(0.9, 0.991, 0.02),
         'net_arch_layer_nodes': np.array([32, 64, 128, 256]),
         'net_arch_hidden_layers': np.array([1, 2, 3]),
-        'single_default': np.array([1])
+        'single_default': np.array([1]),
+        'tau': np.linspace(0., 0.1, 6)
     }
     scenario = 'n_steps_train'
     scan_values = scan_scenarios[scenario]
@@ -125,11 +139,12 @@ if __name__ == "__main__":
     for i, val in enumerate(tqdm_scan_values):
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=dict(
-                exploration_fraction=0.8,
+                exploration_fraction=0.8, exploration_final_eps=0.04,
                 policy_kwargs=dict(net_arch=[8]*2),
-                gamma=0.95),
-            n_steps_train=val, max_steps_per_episode=15, make_plots=False,
-            n_evaluations=5)
+                gamma=0.99, tau=0.5, learning_rate=0.0004,
+                target_update_interval=800, train_freq=6),
+            n_steps_train=val, max_steps_per_episode=20, make_plots=False,
+            n_evaluations=10)
 
     # Final plot
     fig = plt.figure(1, figsize=(7, 5.5))
@@ -148,3 +163,4 @@ if __name__ == "__main__":
     ax1.set_ylim(-0.05, 1.05)
     plt.tight_layout()
     plt.show()
+
