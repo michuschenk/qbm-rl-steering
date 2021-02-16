@@ -71,7 +71,7 @@ class TargetSteeringEnv(gym.Env):
         self.mssb_angle = None  # not set, will be init. with self.reset()
         self.mssb_angle_min = -160e-6  # (rad)
         self.mssb_angle_max = 160e-6  # (rad)
-        self.mssb_delta = 3e-5  # discrete action step (rad)
+        self.mssb_delta = 10e-6  # discrete action step (rad)
 
         # BEAM POSITION
         # x0: position at origin, i.e. before entering MSSB
@@ -181,9 +181,9 @@ class TargetSteeringEnv(gym.Env):
         if self.simple_reward:
             # Reward: give only positive reward when episode is solved
             if reward > self.reward_threshold:
-                reward = 1
+                reward = 1.
             else:
-                reward = -1
+                reward = -1.
 
         # Log history
         self.logger.log_episode.append(
@@ -204,16 +204,26 @@ class TargetSteeringEnv(gym.Env):
         except IndexError:
             pass
 
-    def reset(self) -> np.ndarray:
+    def reset(self, init_mssb_angle: float = None) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta, get the initial state, and reset logger. This method
         gets called e.g. at the end of an episode.
         :return an initial state """
         # Initialize the mssb_angle as a multiple of mssb_delta and calculate
         # the corresponding position at the BPM (= state)
-        idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
-        idx = np.random.randint(idx_max)
-        self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
+        # idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
+        # idx = np.random.randint(idx_max)
+        # self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
+
+        if init_mssb_angle is None:
+            # Initialize mssb_angle within self.mssb_angle_min and
+            # self.mssb_angle_max
+            self.mssb_angle = np.random.uniform(low=self.mssb_angle_min,
+                                                high=self.mssb_angle_max,
+                                                size=1)[0]
+        else:
+            self.mssb_angle = init_mssb_angle
+
         x_init, _ = self.get_pos_at_bpm_target(self.mssb_angle)
 
         # Convert state into binary vector
