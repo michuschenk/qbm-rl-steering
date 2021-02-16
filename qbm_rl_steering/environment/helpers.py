@@ -6,6 +6,7 @@ from stable_baselines3 import DQN
 from tqdm import tqdm
 
 from .env_desc import TargetSteeringEnv
+from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 
 def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
@@ -68,12 +69,21 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     fig.suptitle(fig_title)
 
     axs[0].plot(1e3*x_bpm, rewards, c='forestgreen')
+    axs[0].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
+    axs[0].axhline(env.get_max_reward(), c='k', ls='-', label='Max. reward')
+    axs[0].legend(loc='upper right')
     axs[0].set_ylabel('Reward')
 
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
         axs[1].plot(1e3*states, q_values[:, i], c=cols[i], label=f'Action {i}')
-    axs[1].legend()
+
+    # Run Monte Carlo to get V* values
+    mc_agent = MonteCarloAgent(env, gamma=agent.gamma)
+    states, v_star = mc_agent.run_mc(n_iterations=200)
+
+    axs[1].plot(1e3*states, v_star, c='k', label='V* (MC)')
+    axs[1].legend(loc='lower right')
     axs[1].set_ylabel('Q value')
     axs[1].set_xlabel('State, BPM pos. (mm)')
     plt.show()
