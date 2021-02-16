@@ -12,7 +12,7 @@ from typing import Tuple
 class QBMQN(object):
     def __init__(self, env: TargetSteeringEnv, n_replicas: int,
                  n_meas_for_average: int, big_gamma: float = 0.5,
-                 beta: float = 2.0, learning_rate: float = 1e-4,
+                 beta: float = 2.0, learning_rate: float = 5e-4,
                  exploration_fraction: float = 0.8,
                  exploration_initial_eps: float = 1.0,
                  exploration_final_eps: float = 0.05,
@@ -160,18 +160,22 @@ class QBMQN(object):
 
 if __name__ == "__main__":
     N_BITS_OBSERVATION_SPACE = 8
+    simple_reward = True
+    n_actions = 2
 
-    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
+    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
+                            simple_reward=simple_reward, n_actions=n_actions)
     agent = QBMQN(env, n_replicas=10, n_meas_for_average=1000,
                   big_gamma=0.5, beta=2., exploration_fraction=0.8,
-                  exploration_initial_eps=1.0, exploration_final_eps=0.,
-                  small_gamma=0.98, learning_rate=5e-4)
+                  exploration_initial_eps=1.0, exploration_final_eps=0.04,
+                  small_gamma=0.99, learning_rate=5e-4)
 
-    total_timesteps = 200
+    total_timesteps = 500
     agent.learn(total_timesteps=total_timesteps)
     hlp.plot_log(env, fig_title='Agent training')
 
     # Agent evaluation
-    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE)
+    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
+                            simple_reward=simple_reward, n_actions=n_actions)
     hlp.evaluate_agent(env, agent, n_episodes=10,
                        make_plot=True, fig_title='Agent evaluation')
