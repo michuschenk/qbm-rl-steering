@@ -40,6 +40,10 @@ class QBMQN(object):
         epsilon-greedy decay.
         :param small_gamma: RL parameter, discount factor cumulative rewards.
         """
+        # TODO: implement double Q
+        # TODO: implement replay buffer
+        # TODO: implement save and load weights
+
         self.env = env
 
         # RL parameters
