@@ -45,13 +45,15 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 class TargetSteeringEnv(gym.Env):
     def __init__(self, n_bits_observation_space: int = 8,
                  max_steps_per_episode: int = 20, n_actions: int = 2,
-                 debug: bool = False) -> None:
+                 simple_reward: bool = True, debug: bool = False) -> None:
         """
         :param n_bits_observation_space: number of bits used to represent the
         observation space (will be discretized into
         2**n_bits_observation_space bins)
         :param max_steps_per_episode: max number of steps we allow agent to
         'explore' per episode. After this number of steps, episode is aborted.
+        :param n_actions: number of actions. Here only values 2 (up or down),
+        and 3 (up, down, stay) are possible.
         :param debug: Flag for debugging, adds some prints here and there. """
         super(TargetSteeringEnv, self).__init__()
 
@@ -117,6 +119,7 @@ class TargetSteeringEnv(gym.Env):
         self.n_bits_observation_space = n_bits_observation_space
 
         # For cancellation when beyond certain number of steps in an episode
+        self.simple_reward = simple_reward
         self.step_count = None
         self.max_steps_per_episode = max_steps_per_episode
         self.reward_threshold = 0.9 * self.get_max_reward()
@@ -175,11 +178,12 @@ class TargetSteeringEnv(gym.Env):
         else:
             pass
 
-        # Reward: give only positive reward when episode is solved
-        if reward > self.reward_threshold:
-            reward = 1
-        else:
-            reward = -1
+        if self.simple_reward:
+            # Reward: give only positive reward when episode is solved
+            if reward > self.reward_threshold:
+                reward = 1
+            else:
+                reward = -1
 
         # Log history
         self.logger.log_episode.append(

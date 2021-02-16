@@ -11,11 +11,12 @@ from environment.env_desc import TargetSteeringEnv
 N_BITS_OBSERVATION_SPACE = 8
 
 
-def test_environment() -> TargetSteeringEnv:
+def test_environment(simple_reward: bool = True) -> TargetSteeringEnv:
     """ To understand environment better, plot response and test random
     action-taking.
     :return env: TargetSteering environment """
-    env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE)
+    env = TargetSteeringEnv(N_BITS_OBSERVATION_SPACE,
+                            simple_reward=simple_reward)
     check_env(env)
     hlp.plot_response(env, fig_title='Env. test: response function')
     hlp.run_random_trajectories(
@@ -51,8 +52,8 @@ def init_agent(env: TargetSteeringEnv, scan_params: dict = None) -> DQN:
 def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
                          n_episodes_test: int = 1000,
                          max_steps_per_episode: int = 20,
-                         scan_params: dict = None, make_plots: bool = False) \
-        -> (np.ndarray, np.ndarray):
+                         scan_params: dict = None, make_plots: bool = False,
+                         simple_reward: bool = True) -> (np.ndarray, np.ndarray):
     """ Evaluate performance of agent for the scan params and return
     np.arrays containing the average and standard deviation of the two
     metrics defined in helpers.calculate_performance_metrics(..).
@@ -62,6 +63,8 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
     :param max_steps_per_episode: number of steps per episode (abort criterion)
     :param scan_params: dictionary of parameters that we scan
     :param make_plots: flag to decide whether to show plots or not
+    :param simple_reward: flag to set simple (discrete) or continuous reward
+    scheme
     :return: average and std. dev of both performance metrics. """
     if scan_params is None:
         print('Running performance test with default parameters')
@@ -72,7 +75,7 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
     for j in tqdm_pbar:
         # Initialize environment and agent
         env = TargetSteeringEnv(
-            N_BITS_OBSERVATION_SPACE,
+            N_BITS_OBSERVATION_SPACE, simple_reward=simple_reward,
             max_steps_per_episode=max_steps_per_episode)
         agent = init_agent(env, scan_params)
 
@@ -90,7 +93,7 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
 
         # Run evaluation of trained agent
         test_env = TargetSteeringEnv(
-            N_BITS_OBSERVATION_SPACE,
+            N_BITS_OBSERVATION_SPACE, simple_reward=simple_reward,
             max_steps_per_episode=max_steps_per_episode)
         test_agent = DQN.load('dqn_transferline')
         hlp.evaluate_agent(
@@ -100,7 +103,7 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
         # Show Q-net of a trained agent
         if make_plots:
             env = TargetSteeringEnv(
-                N_BITS_OBSERVATION_SPACE,
+                N_BITS_OBSERVATION_SPACE, simple_reward=simple_reward,
                 max_steps_per_episode=max_steps_per_episode)
             hlp.plot_q_net_response(env, agent, 'Q-net response, trained agent')
 
@@ -113,40 +116,16 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
     return metrics_avg, metrics_std
 
 
-if __name__ == "__main__":
-    # env = test_environment()
-
-    # Scenarios for parameter scans
-    scan_scenarios = {
-        'exploration_fraction': np.arange(0., 1.1, 0.1),
-        'n_steps_train': np.arange(5000, 21000, 5000),
-        'target_update_interval': np.arange(500, 3100, 500),
-        'max_steps_per_episode': np.arange(10, 45, 5),
-        'gamma': np.arange(0.9, 0.991, 0.02),
-        'net_arch_layer_nodes': np.array([32, 64, 128, 256]),
-        'net_arch_hidden_layers': np.array([1, 2, 3]),
-        'single_default': np.array([1]),
-        'tau': np.linspace(0., 0.1, 6)
-    }
-    scenario = 'n_steps_train'
-    scan_values = scan_scenarios[scenario]
-
-    # Run the scan (adapt the correct kwarg)
-    metrics_avg = np.zeros((2, len(scan_values)))
-    metrics_std = np.zeros((2, len(scan_values)))
-
-    tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
-    for i, val in enumerate(tqdm_scan_values):
-        metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
-            scan_params=dict(
-                exploration_fraction=0.8, exploration_final_eps=0.04,
-                policy_kwargs=dict(net_arch=[8]*2),
-                gamma=0.99, tau=0.5, learning_rate=0.0004,
-                target_update_interval=800, train_freq=6),
-            n_steps_train=val, max_steps_per_episode=20, make_plots=False,
-            n_evaluations=10)
-
-    # Final plot
+def show_scan_result(scan_values: np.ndarray, metrics_avg: np.ndarray,
+                     metrics_std: np.ndarray, scenario: str):
+    """
+    Plot the success metric for the scanned values.
+    :param scan_values: values of the scan parameters
+    :param metrics_avg: performance metrics, mean over all evaluations
+    :param metrics_std: performance metrics, std. dev. over all evaluations
+    :param scenario: name of the scan scenario, will be used as x-label
+    :return: None
+    """
     fig = plt.figure(1, figsize=(7, 5.5))
     fig.suptitle('Performance evaluation')
     ax1 = plt.gca()
@@ -164,3 +143,40 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
+
+if __name__ == "__main__":
+    # env = test_environment()
+
+    # Scenarios for parameter scans
+    scan_scenarios = {
+        'exploration_fraction': np.arange(0., 1.1, 0.1),
+        'n_steps_train': np.arange(1000, 3100, 1000),
+        'target_update_interval': np.arange(500, 3100, 500),
+        'max_steps_per_episode': np.arange(10, 45, 5),
+        'gamma': np.arange(0.9, 0.991, 0.02),
+        'net_arch_layer_nodes': np.array([32, 64, 128, 256]),
+        'net_arch_hidden_layers': np.array([1, 2, 3]),
+        'single_default': np.array([1]),
+        'tau': np.linspace(0., 0.1, 6)
+    }
+    scenario = 'n_steps_train'
+    scan_values = scan_scenarios[scenario]
+
+    # Run the scan (adapt the correct kwarg)
+    metrics_avg = np.zeros((2, len(scan_values)))
+    metrics_std = np.zeros((2, len(scan_values)))
+
+    tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
+    for i, val in enumerate(tqdm_scan_values):
+        scan_params = dict(
+            exploration_fraction=0.8, exploration_final_eps=0.04,
+            policy_kwargs=dict(net_arch=[8] * 2),
+            gamma=0.99, tau=0.5, learning_rate=0.0005,
+            target_update_interval=800, train_freq=6)
+
+        metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
+            scan_params=scan_params,
+            n_steps_train=val, max_steps_per_episode=20,
+            n_evaluations=3, simple_reward=True, make_plots=False)
+
+    show_scan_result(scan_values, metrics_avg, metrics_std, scenario)
