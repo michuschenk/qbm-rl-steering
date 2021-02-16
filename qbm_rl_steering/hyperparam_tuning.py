@@ -13,7 +13,7 @@ def optimize_dqn(trial):
     """
     return {
         'learning_rate': trial.suggest_loguniform('learning_rate', 1e-5, 5e-3),
-        'target_update_interval': trial.suggest_loguniform_int(
+        'target_update_interval': trial.suggest_int(
             'target_update_interval', 10, 10000),
         'tau': trial.suggest_uniform('tau', 0., 1.),
         'exploration_fraction': trial.suggest_uniform(
