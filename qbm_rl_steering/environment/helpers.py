@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from stable_baselines3 import DQN
 import torch as th
+
+from stable_baselines3 import DQN
+from tqdm import tqdm
 
 from .env_desc import TargetSteeringEnv
 
@@ -65,12 +67,12 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6, 6))
     fig.suptitle(fig_title)
 
-    axs[0].plot(1e3*x_bpm, rewards, c='orange')
+    axs[0].plot(1e3*x_bpm, rewards, c='forestgreen')
     axs[0].set_ylabel('Reward')
 
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
-        axs[1].plot(1e3*states, q_values[:, i], label=f'Action {i}')
+        axs[1].plot(1e3*states, q_values[:, i], c=cols[i], label=f'Action {i}')
     axs[1].legend()
     axs[1].set_ylabel('Q value')
     axs[1].set_xlabel('State, BPM pos. (mm)')
@@ -161,7 +163,7 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
                 c='tab:red', label='Final')
     axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
     axs[2].axhline(env.get_max_reward(), c='k', label='Max. reward')
-    axs[2].set_ylim(-0.05, 1.05)
+    axs[2].set_ylim(-1.05, 1.05)
 
     axs[0].set_ylabel('Abort reason')
     axs[1].set_ylabel('# steps per episode')
@@ -183,17 +185,21 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
     :param n_episodes: number of episodes used to evaluate agent
     :param make_plot: flag to decide whether to show plots or not
     :param fig_title: figure title """
-    # TODO: implement progress bar with tqdm
     episode_count = 0
     env.clear_log()
     obs = env.reset()
+
+    pbar = tqdm(total=n_episodes, position=2, leave=True, desc='Evaluation',
+                disable=(not make_plot))
     while episode_count < n_episodes:
         action, _ = agent.predict(obs, deterministic=True)
-        obs, reward, done, info = env.step(action)
-        # agent.render()
+        obs, reward, done, info = env.step(int(action))
         if done:
             obs = env.reset()
             episode_count += 1
+            pbar.update(1)
+    pbar.close()
+
     if make_plot:
         plot_log(env, fig_title=fig_title)
 
