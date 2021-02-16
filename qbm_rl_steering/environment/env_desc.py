@@ -44,10 +44,9 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 class TargetSteeringEnv(gym.Env):
     def __init__(self, n_bits_observation_space: int = 8,
-                 max_steps_per_episode: int = 20,
+                 max_steps_per_episode: int = 20, n_actions: int = 2,
                  debug: bool = False) -> None:
         """
-
         :param n_bits_observation_space: number of bits used to represent the
         observation space (will be discretized into
         2**n_bits_observation_space bins)
@@ -95,10 +94,16 @@ class TargetSteeringEnv(gym.Env):
                 self.x_margin_discretization - 1.5 * x_delta)
 
         # GYM REQUIREMENTS
-        # Define action space with 3 discrete actions. Action_map defines how
-        # action is mapped to change of self.mssb_angle.
-        self.action_space = gym.spaces.Discrete(3)
-        self.action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
+        # Define action space with 2 or 3 discrete actions. Action_map defines
+        # how action is mapped to change of self.mssb_angle.
+        if n_actions == 3:
+            self.action_space = gym.spaces.Discrete(3)
+            self.action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
+        elif n_actions == 2:
+            self.action_space = gym.spaces.Discrete(2)
+            self.action_map = {0: self.mssb_delta, 1: -self.mssb_delta}
+        else:
+            raise ValueError("Set n_actions either to 2 or 3.")
 
         # This will create a discrete observation / state space with
         # length n_bits_observation_space, i.e. the Q-network will have
@@ -169,6 +174,12 @@ class TargetSteeringEnv(gym.Env):
             done_reason = 2
         else:
             pass
+
+        # Reward: give only positive reward when episode is solved
+        if reward > self.reward_threshold:
+            reward = 1
+        else:
+            reward = -1
 
         # Log history
         self.logger.log_episode.append(
@@ -269,6 +280,7 @@ class TargetSteeringEnv(gym.Env):
 
         # Convert binary_string to list
         x_binary = np.array([int(i) for i in binary_string])
+        x_binary[x_binary == 0] = -1
         return x_binary
 
     def _make_state_discrete(self, x: float) -> int:
@@ -288,6 +300,7 @@ class TargetSteeringEnv(gym.Env):
         :param x_binary: state as binary encoded vector, i.e. np.array of
         length self.n_bits_observation_space
         :return x position converted back to a float """
+        x_binary[x_binary == -1] = 0
         binary_string = ''.join([str(i) for i in x_binary])
         bin_idx = int(binary_string, 2)
         x = ((bin_idx + 0.5) * self.observation_bin_width +

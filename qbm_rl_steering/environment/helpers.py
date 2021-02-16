@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3 import DQN
+import torch as th
 
 from .env_desc import TargetSteeringEnv
 
@@ -37,6 +38,42 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
                ('BPM pos.', 'Episode abort', 'Discretisation', 'Reward'),
                loc='upper left', fontsize=10)
     plt.tight_layout()
+    plt.show()
+
+
+def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
+                        fig_title: str = ''):
+    """
+    The idea is to plot the Q-net of the agent (to look inside the
+    agent's brain...) versus the state and action axis.
+    """
+    angles, x_bpm, rewards = env.get_response()
+
+    # Evaluate q-net
+    states = np.linspace(
+        env.x_min, env.x_max, 2**env.n_bits_observation_space)
+
+    # Convert states to discrete, binary
+    states_binary = []
+    for s in states:
+        states_binary.append(env._make_state_discrete_binary(s))
+
+    # Convert to Torch tensor, and run it through the q-net
+    states_binary = th.tensor(states_binary)
+    q_values = agent.q_net(states_binary).detach().numpy()
+
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6, 6))
+    fig.suptitle(fig_title)
+
+    axs[0].plot(1e3*x_bpm, rewards, c='orange')
+    axs[0].set_ylabel('Reward')
+
+    cols = ['tab:red', 'tab:blue']
+    for i in range(q_values.shape[1]):
+        axs[1].plot(1e3*states, q_values[:, i], label=f'Action {i}')
+    axs[1].legend()
+    axs[1].set_ylabel('Q value')
+    axs[1].set_xlabel('State, BPM pos. (mm)')
     plt.show()
 
 
