@@ -44,18 +44,6 @@ class MonteCarloAgent:
             return 0
         return 1
 
-    def _convert_to_binary(self, val: int) -> Tuple:
-        """
-        Converts an integer to a binary vector that describes the state.
-        :param val: integer number to be converted
-        :return binary encoded vector (0s are replaced by -1s)
-        """
-        binary_fmt = f'0{self.env.n_bits_observation_space}b'
-        binary_string = format(val, binary_fmt)
-        state_binary = np.array([int(i) for i in binary_string])
-        state_binary[state_binary == 0] = -1
-        return tuple(state_binary)
-
     def _get_all_states(self) -> List:
         """
         Creates all the different states of the environment we are working
@@ -66,7 +54,7 @@ class MonteCarloAgent:
         all_states_binary = []
         for state in all_states:
             # Convert to corresponding binary state as used in env.
-            state_binary = self._convert_to_binary(state)
+            state_binary = tuple(self.env.make_binary(state))
             all_states_binary.append(tuple(state_binary))
         return all_states_binary
 

@@ -181,9 +181,9 @@ class TargetSteeringEnv(gym.Env):
         if self.simple_reward:
             # Reward: give only positive reward when episode is solved
             if reward > self.reward_threshold:
-                reward = 1.
+                reward = 100.
             else:
-                reward = -1.
+                reward = 0.
 
         # Log history
         self.logger.log_episode.append(
@@ -277,7 +277,8 @@ class TargetSteeringEnv(gym.Env):
         return x_bpm, reward
 
     def _make_state_discrete_binary(self, x: float) -> np.ndarray:
-        """ Discretize state into 2**self.n_bits_observation_space bins and
+        """
+        Discretize state into 2**self.n_bits_observation_space bins and
         convert to binary format.
         :param x: input BPM position (float), to be converted to binary
         :return x_binary: np.array of length self.n_bits_observation_space
@@ -288,14 +289,21 @@ class TargetSteeringEnv(gym.Env):
         assert bin_idx < (2**self.n_bits_observation_space - 1)
         assert bin_idx > -1
 
-        # Convert integer to binary with a fixed length
-        binary_fmt = f'0{self.n_bits_observation_space}b'
-        binary_string = format(bin_idx, binary_fmt)
+        return self.make_binary(bin_idx)
 
-        # Convert binary_string to list
-        x_binary = np.array([int(i) for i in binary_string])
-        x_binary[x_binary == 0] = -1
-        return x_binary
+    def make_binary(self, val: int) -> np.ndarray:
+        """
+        Converts an integer to a binary vector that describes the state.
+        :param val: integer number to be converted
+        :return binary encoded vector (0s are replaced by -1s)
+        """
+        binary_fmt = f'0{self.n_bits_observation_space}b'
+        binary_string = format(val, binary_fmt)
+
+        # Convert binary_string to np array
+        state_binary = np.array([int(i) for i in binary_string])
+        state_binary[state_binary == 0] = -1
+        return state_binary
 
     def _make_state_discrete(self, x: float) -> int:
         """ Take input x (BPM position) and discretize / bin.
