@@ -16,7 +16,7 @@ class QBMQN(object):
                  n_meas_for_average: int,
                  big_gamma: Tuple[float, float] = (20., 0.5),
                  beta: Tuple[float, float] = (0.1, 2.0),
-                 learning_rate: float = 5e-4,
+                 learning_rate: Tuple[float, float] = (1e-3, 1e-3),
                  exploration_fraction: float = 0.8,
                  exploration_initial_eps: float = 1.0,
                  exploration_final_eps: float = 0.05,
@@ -73,7 +73,7 @@ class QBMQN(object):
         possible_actions = [i for i in range(env.action_space.n)]
         self.q_function = utl.QFunction(
             n_bits_observation_space, n_bits_action_space, possible_actions,
-            learning_rate, small_gamma, n_replicas, n_meas_for_average, beta)
+            small_gamma, n_replicas, n_meas_for_average, beta)
 
     def _initialise_training_episode(self, big_gamma: float) -> \
             Tuple[int, float, np.ndarray, np.ndarray]:
@@ -146,6 +146,9 @@ class QBMQN(object):
         # big_gamma decay schedule
         big_gamma = self._get_big_gamma_schedule(total_timesteps)
 
+        # learning_rate decay schedule
+        learning_rate = self._get_learning_rate_schedule(total_timesteps)
+
         # This is to trigger the initialization of a new episode at the
         # beginning of the training loop
         done = True
@@ -167,7 +170,8 @@ class QBMQN(object):
 
             # Update weights
             self.q_function.update_weights(samples, visible_nodes, q_value,
-                                           next_q_value, reward)
+                                           next_q_value, reward,
+                                           learning_rate[it])
 
             # Note that environment is already in next_state, so this line
             # should not be necessary
@@ -226,12 +230,23 @@ class QBMQN(object):
                                   total_timesteps)
         return gamma_decay
 
+    def _get_learning_rate_schedule(self, total_timesteps: int) -> np.ndarray:
+        """
+        Calculates the linear decay schedule for the learning_rate
+        :param total_timesteps: total number of timesteps for the RL training.
+        :return: np array of learning_rate as a function of time step
+        """
+        learning_decay = np.linspace(
+            self.learning_rate[0], self.learning_rate[1], total_timesteps)
+        return learning_decay
+
 
 if __name__ == "__main__":
     N_BITS_OBSERVATION_SPACE = 8
     simple_reward = True
     small_gamma = 0.8
-    big_gamma = (20., 0.5)  # transverse field decay (assume linear schedule)
+    big_gamma = (0.5, 0.5)  # transverse field decay (assume linear schedule)
+    learning_rate = (1e-2, 5e-4)  # linear schedule for the learning rate
     n_actions = 2
 
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
@@ -243,9 +258,9 @@ if __name__ == "__main__":
     agent = QBMQN(env, n_replicas=25, n_meas_for_average=150,
                   big_gamma=big_gamma, beta=(2., 2.), exploration_fraction=0.6,
                   exploration_initial_eps=1.0, exploration_final_eps=0.04,
-                  small_gamma=small_gamma, learning_rate=2e-3)
+                  small_gamma=small_gamma, learning_rate=learning_rate)
 
-    total_timesteps = 2000
+    total_timesteps = 1000
 
     # I think they are not playing out the episodes, but are actually
     # sweeping through the states (s1, a1) (either randomly or systematically)
@@ -268,9 +283,9 @@ if __name__ == "__main__":
         ax.plot(1e3*states, q_values[:, i], c=cols[i], label=f'Action {i}')
 
     # MC agent
-    # mc_agent = MonteCarloAgent(env, gamma=small_gamma)
-    # states_v, v_star = mc_agent.run_mc(200)
-    # ax.plot(1e3*states_v, v_star, c='k', label='V* (MC)')
+    mc_agent = MonteCarloAgent(env, gamma=small_gamma)
+    states_v, v_star = mc_agent.run_mc(200)
+    ax.plot(1e3*states_v, v_star, c='k', label='V* (MC)')
 
     ax.set_xlabel('State, BPM pos. (mm)')
     ax.set_ylabel('Q value')

@@ -206,7 +206,7 @@ def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
 class QFunction(object):
     def __init__(self, n_bits_observation_space: int,
                  n_bits_action_space: int, possible_actions: list,
-                 learning_rate: float, small_gamma: float, n_replicas: int,
+                 small_gamma: float, n_replicas: int,
                  n_meas_for_average: int,
                  beta: Tuple[float, float]) -> None:
         """
@@ -217,8 +217,6 @@ class QFunction(object):
         :param n_bits_action_space: number of bits required to encode the
         actions that are possible in the given environment
         :param possible_actions: list of possible action indices
-        :param learning_rate: RL. parameter, learning rate for update of
-        coupling weights of the Chimera graph.
         :param small_gamma: RL parameter, discount factor cumulative rewards.
         :param n_replicas: number of replicas in the 3D extension of the Ising
         model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf
@@ -232,7 +230,6 @@ class QFunction(object):
         self.n_meas_for_average = n_meas_for_average
         self.beta = beta
 
-        self.learning_rate = learning_rate
         self.small_gamma = small_gamma
 
         self.n_bits_observation_space = n_bits_observation_space
@@ -381,7 +378,8 @@ class QFunction(object):
 
     def update_weights(
             self, samples: np.ndarray, visible_nodes: np.ndarray,
-            current_Q: float, future_Q: float, reward: float) -> None:
+            current_Q: float, future_Q: float, reward: float,
+            learning_rate: float) -> None:
         """
         Calculates the TD(0) learning step, i.e. the updates of the coupling
         dictionaries w_hh, w_vh according to Eqs. (11) and (12) in the paper:
@@ -396,10 +394,12 @@ class QFunction(object):
         :param current_Q: Q function value at time step n, Q(s_n, a_n)
         :param future_Q: Q function value at time step n+1, Q(s_n+1, a_n+1)
         :param reward: RL reward of current step, r_n(s_n, a_n)
+        :param learning_rate: RL. parameter, learning rate for update of
+        coupling weights of the Chimera graph.
         :return None
         """
         # This term is the same for both weight updates w_hh and w_vh
-        update_factor = self.learning_rate * (
+        update_factor = learning_rate * (
                 reward + self.small_gamma * future_Q - current_Q)
 
         # Update of w_vh, Eq. (11)
