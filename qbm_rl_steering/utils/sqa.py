@@ -29,9 +29,6 @@ class SQA:
         architecture = self._set_architecture()
         self.annealer = architecture.dense_graph_annealer()
 
-        # Set number of Trotter slices (called replicas in the paper)
-        self.annealer.set_preferences(n_trotters=n_replicas)
-
         # Transverse field decay during annealing
         self.big_gamma_schedule = 'linear'
         self.big_gamma_init = big_gamma[0]
@@ -107,8 +104,13 @@ class SQA:
         # Set the QUBO matrix
         self._set_qubo_matrix(qubo_dict)
 
+        # Set number of Trotter slices (called replicas in the paper)
+        # This has to be done after setting the QUBO matrix, otherwise the sqaod
+        # sets n_trotters to n_nodes / 4 for some reason (see sqaod doc.)
+        self.annealer.set_preferences(n_trotters=self.n_replicas)
+
         # Annealing
-        spin_configurations = np.array(
+        spin_configurations = np.empty(
             (n_meas_for_average, self.n_replicas, self.n_nodes))
 
         for i in range(n_meas_for_average):
@@ -121,7 +123,7 @@ class SQA:
                 self.annealer.anneal_one_step(big_gamma, self.beta)
                 big_gamma += big_gamma_step
 
-            # Get the spin configurations of this run
+            # Get the spin configurations at the end of this annealing run
             # .get_q() returns the spin configurations as np matrix with shape
             # (n_replicas, n_hidden_nodes).
             # Note that .get_x() would return the bits (i.e. -1 spins are 0s)

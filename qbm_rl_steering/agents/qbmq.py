@@ -297,7 +297,8 @@ if __name__ == "__main__":
                   exploration_fraction=0.6, exploration_epsilon=(1.0, 0.04))
 
     # Learning
-    total_timesteps = 500
+    # total_timesteps = 500
+    total_timesteps = 10
     agent.learn(total_timesteps=total_timesteps)
 
     # Show learning evolution
