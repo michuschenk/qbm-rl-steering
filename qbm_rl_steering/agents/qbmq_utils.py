@@ -70,7 +70,7 @@ def create_general_qubo_matrix(
 
 
 def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
-                     n_replicas: int) -> np.ndarray:
+                     n_replicas: int, beta: Tuple[float, float]) -> np.ndarray:
     """
     Run the AnnealingSampler with the DWAVE QUBO method and generate all the
     samples (= spin configurations at hidden nodes of Chimera graph,
@@ -87,6 +87,9 @@ def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
     then be used to calculate the average effective Hamiltonian.
     :param n_replicas: number of replicas in the 3D extension of the Ising
     model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf .
+    :param beta: hyperparameter; inverse temperature used for simulated
+    annealing, from start to end, according to linear (or geometric)
+    schedule, see paper for details.
     :return: 3D numpy array of all the samples. axis 0 is the index of the
     'independent measurement' for averaging the effective Hamiltonian,
     axis 1 is index k (replicas), and axis 2 is the index of the hidden nodes.
@@ -96,7 +99,8 @@ def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
     #  measurements' (for avg.) that we do?
     num_reads = n_meas_for_average * n_replicas
     samples = list(SimulatedAnnealingSampler().sample_qubo(
-        Q=qubo_matrix, num_reads=num_reads).samples())
+        Q=qubo_matrix, num_reads=num_reads,
+        beta_schedule_type='linear', beta_range=beta).samples())
 
     # TODO: why do we shuffle them?
     random.shuffle(samples)
@@ -108,7 +112,7 @@ def get_qubo_samples(qubo_matrix: Dict, n_meas_for_average: int,
 
 def get_average_effective_hamiltonian(
         samples: np.ndarray, w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray,
-        big_gamma: float, beta: float) -> float:
+        big_gamma: float, beta: Tuple[float, float]) -> float:
     """
     This method calculates the average effective Hamiltonian as given in
     Eq. (9) in paper: https://arxiv.org/pdf/1706.00074.pdf , using samples
@@ -129,10 +133,12 @@ def get_average_effective_hamiltonian(
     :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
     binary vectors ({-1, +1}) of the concatenated states and action vectors
     (length: n_bits_observation_space + n_bits_action_space).
-    :param big_gamma: hyperparameter; strength of the transverse field
-    (virtual, average value), see paper for details.
+    :param big_gamma: hyperparameter; current strength of the transverse
+    field (virtual, average value), see paper for details. Follows a
+    linear decay schedule (see QBMQ class as well).
     :param beta: hyperparameter; inverse temperature used for simulated
-    annealing, see paper for details.
+    annealing, from start to end, according to linear (or geometric)
+    schedule, see paper for details.
     :return: single float; effective Hamiltonian averaged over the individual
     measurements.
     """
@@ -155,9 +161,9 @@ def get_average_effective_hamiltonian(
 
     # THIRD term, [-w_plus * (sum_hk_hkplus1 + sum_h1_hr)], in Eq. (9)
     # h_sum_3 has shape (n_meas_for_average,)
-    x = big_gamma * beta / n_replicas
+    x = big_gamma * beta[1] / n_replicas
     coth_term = math.cosh(x) / math.sinh(x)
-    w_plus = math.log10(coth_term) / (2. * beta)
+    w_plus = math.log10(coth_term) / (2. * beta[1])
 
     # I think there is a typo in Eq. (9). The summation index in w+(.. + ..)
     # of the first term should only go from k=1 to r-1.
@@ -171,7 +177,7 @@ def get_average_effective_hamiltonian(
 
 
 def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
-                    beta: float) -> float:
+                    beta: Tuple[float, float]) -> float:
     """
     We count the number of unique spin configurations on the 3D extended
     Ising model (torus), i.e. on the n_replicas * n_hidden_nodes nodes and
@@ -184,7 +190,8 @@ def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
     :param avg_eff_hamiltonian: average effective Hamiltonian according to
     Eq. (9) in paper: https://arxiv.org/pdf/1706.00074.pdf .
     :param beta: hyperparameter; inverse temperature used for simulated
-    annealing, see paper for more details.
+    annealing, from start to end, according to linear (or geometric)
+    schedule, see paper for details.
     :return: free energy of the QBM defined according to the paper.
     """
     # Return the number of occurrences of unique spin configurations along
@@ -193,15 +200,15 @@ def get_free_energy(samples: np.ndarray, avg_eff_hamiltonian: float,
     mean_n_occurrences = n_occurrences / float(np.sum(n_occurrences))
     a_sum = np.sum(mean_n_occurrences * np.log10(mean_n_occurrences))
 
-    return avg_eff_hamiltonian + a_sum / beta
+    return avg_eff_hamiltonian + a_sum / beta[1]
 
 
 class QFunction(object):
     def __init__(self, n_bits_observation_space: int,
                  n_bits_action_space: int, possible_actions: list,
                  learning_rate: float, small_gamma: float, n_replicas: int,
-                 n_meas_for_average: int, big_gamma: float,
-                 beta: float) -> None:
+                 n_meas_for_average: int,
+                 beta: Tuple[float, float]) -> None:
         """
         Implementation of the Q function (state-action value function) using
         DWAVE neal sampler.
@@ -217,14 +224,12 @@ class QFunction(object):
         model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf
         :param n_meas_for_average: number of 'independent measurements' that
         will then be used to calculate the average effective Hamiltonian.
-        :param big_gamma:  hyperparameter; strength of the transverse field
-        (virtual, average value), see paper for more details.
         :param beta: hyperparameter; inverse temperature used for simulated
-        annealing, see paper for details.
+        annealing, from start to end, according to linear (or geometric)
+        schedule, see paper for details.
         """
         self.n_replicas = n_replicas
         self.n_meas_for_average = n_meas_for_average
-        self.big_gamma = big_gamma
         self.beta = beta
 
         self.learning_rate = learning_rate
@@ -294,7 +299,8 @@ class QFunction(object):
         # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
         return w_hh, w_vh
 
-    def calculate_q_value(self, state: np.ndarray, action: int) -> \
+    def calculate_q_value(self, state: np.ndarray, action: int,
+                          big_gamma: float) -> \
             Tuple[float, np.ndarray, np.ndarray]:
         """
         Based on state and chosen action, calculate the free energy,
@@ -302,17 +308,23 @@ class QFunction(object):
         :param state: state the environment is in (binary vector, directly
         obtained from either env.reset(), or env.step())
         :param action: chosen action (index)
+        :param big_gamma: hyperparameter; current strength of the transverse
+        field (virtual, average value), see paper for details. Follows a
+        linear decay schedule (see QBMQ class as well).
         :return free energy, samples, and visible_nodes.
         """
-        visible_nodes = get_visible_nodes_array(state=state, action=action)
+        visible_nodes = get_visible_nodes_array(
+            state=state, action=action,
+            n_bits_action_space=self.n_bits_action_space)
         qubo_matrix = create_general_qubo_matrix(
             self.w_hh, self.w_vh, visible_nodes)
 
         samples = get_qubo_samples(
-            qubo_matrix, self.n_meas_for_average, self.n_replicas)
+            qubo_matrix, self.n_meas_for_average, self.n_replicas,
+            beta=self.beta)
 
         avg_eff_hamiltonian = get_average_effective_hamiltonian(
-            samples, self.w_hh, self.w_vh, visible_nodes, self.big_gamma,
+            samples, self.w_hh, self.w_vh, visible_nodes, big_gamma,
             self.beta)
 
         free_energy = get_free_energy(samples, avg_eff_hamiltonian, self.beta)
@@ -321,7 +333,7 @@ class QFunction(object):
         return q_value, samples, visible_nodes
 
     def follow_policy(
-            self, state: np.ndarray, epsilon: float) -> \
+            self, state: np.ndarray, epsilon: float, big_gamma: float) -> \
             Tuple[int, float, np.ndarray, np.ndarray]:
         """
         Follow the epsilon-greedy policy to get the next action. With
@@ -331,6 +343,9 @@ class QFunction(object):
         :param state: state that the environment is in (binary vector, directly
         obtained from either env.reset(), or env.step()).
         :param epsilon: probability for choosing random action.
+        :param big_gamma: hyperparameter; current strength of the transverse
+        field (virtual, average value), see paper for details. Follows a
+        linear decay schedule (see QBMQ class as well).
         :return: chosen action index, q_value, QUBO samples, state-action
         values of visible_nodes
         """
@@ -338,7 +353,7 @@ class QFunction(object):
             # Pick action randomly
             action = random.choice(self.possible_actions)
             q_value, samples, visible_nodes = self.calculate_q_value(
-                state, action)
+                state, action, big_gamma)
             return action, q_value, samples, visible_nodes
         else:
             # Pick action greedily
@@ -351,7 +366,7 @@ class QFunction(object):
 
             for action in self.possible_actions:
                 q_value, samples, visible_nodes = self.calculate_q_value(
-                    state, action)
+                    state, action, big_gamma)
 
                 # TODO: what needs to be done is to pick action randomly in
                 #  case there are several actions with the same Q values.
