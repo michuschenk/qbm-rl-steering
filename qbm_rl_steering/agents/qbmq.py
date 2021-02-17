@@ -1,64 +1,69 @@
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-import qbm_rl_steering.agents.qbmq_utils as utl
+import qbm_rl_steering.utils.qbmq_utils as utl
 import qbm_rl_steering.environment.helpers as hlp
 from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 import math
 import tqdm
 
 from typing import Tuple, List
 
+# TODO: group arguments using dicts...
+# TODO: implement double Q
+# TODO: implement replay buffer
+# TODO: implement save and load weights
+
 
 class QBMQN(object):
     def __init__(self, env: TargetSteeringEnv, n_replicas: int,
                  n_meas_for_average: int,
+                 n_annealing_steps: int,
                  big_gamma: Tuple[float, float] = (20., 0.5),
-                 beta: Tuple[float, float] = (0.1, 2.0),
+                 beta: float = 2.0,
                  learning_rate: Tuple[float, float] = (1e-3, 1e-3),
+                 small_gamma: float = 0.99,
                  exploration_fraction: float = 0.8,
-                 exploration_initial_eps: float = 1.0,
-                 exploration_final_eps: float = 0.05,
-                 small_gamma: float = 0.99) -> None:
+                 exploration_epsilon: Tuple[float, float] = (1., 0.05))\
+            -> None:
         """
-        Implementation of the QBM Q learning agent, following the paper:
+        Implementation of the QBM-RL Q-learning agent, following the paper:
         https://arxiv.org/pdf/1706.00074.pdf
         :param env: OpenAI gym environment
         :param n_replicas: number of replicas in the 3D extension of the Ising
-        model, see Fig. 1 in paper.
-        :param n_meas_for_average: number of 'independent measurements' that
-        will be used to QUBO sample and eventually to calculate the average
-        effective Hamiltonian of the system.
-        :param big_gamma: hyperparameter; strength of the transverse field
+        model, see Fig. 1 in paper. (aka Trotter slices).
+        :param n_meas_for_average: number of 'independent spin configuration
+        measurements' that will be used for the SQA and eventually to
+        calculate the average effective Hamiltonian of the system.
+        :param n_annealing_steps: number of steps that one annealing
+        process should take (~annealing time).
+        :param big_gamma: strength of the transverse field
         (virtual, average value), decaying from the first to the second value
-        over the course of the annealing, see paper for details.
-        :param beta: hyperparameter; inverse temperature used for simulated
-        annealing, from start to end, according to linear (or geometric)
-        schedule, see paper for details.
+        in the tuple over the course of the quantum annealing process,
+        see paper for details and SQA class definition.
+        :param beta: inverse temperature (note that this parameter is kept
+        constant in SQA other than in SA).
         :param learning_rate: RL. parameter, learning rate for update of
-        coupling weights of the Chimera graph.
+        coupling weights of the Chimera graph. First and second value in
+        tuple correspond to initial and final learning rate resp. (for use
+        with learning rate schedule).
+        :param small_gamma: RL parameter, discount factor cumulative rewards.
         :param exploration_fraction: RL param., fraction of total number of
         time steps over which epsilon-greedy parameter decays.
-        :param exploration_initial_eps: RL parameter, initial epsilon for
-        epsilon-greedy decay.
-        :param exploration_final_eps: RL parameter, final epsilon for
-        epsilon-greedy decay.
-        :param small_gamma: RL parameter, discount factor cumulative rewards.
+        :param exploration_epsilon: RL parameter, initial and final (
+        at time defined by exploration_fraction) epsilon for epsilon-greedy
+        decay.
         """
-        # TODO: implement double Q
-        # TODO: implement replay buffer
-        # TODO: implement save and load weights
-        # TODO: learning_rate schedule
-
         self.env = env
 
         # RL parameters
         self.learning_rate = learning_rate
         self.small_gamma = small_gamma
         self.exploration_fraction = exploration_fraction
-        self.exploration_initial_eps = exploration_initial_eps
-        self.exploration_final_eps = exploration_final_eps
+        self.exploration_epsilon_init = exploration_epsilon[0]
+        self.exploration_epsilon_final = exploration_epsilon[1]
 
         # Q function approximation (RL state-action value function)
         n_bits_observation_space = env.n_bits_observation_space
@@ -68,28 +73,27 @@ class QBMQN(object):
         if env.action_space.n < 2:
             n_bits_action_space = 1
 
-        self.big_gamma = big_gamma
-
-        possible_actions = [i for i in range(env.action_space.n)]
+        self.possible_actions = [act for act in range(env.action_space.n)]
         self.q_function = utl.QFunction(
-            n_bits_observation_space, n_bits_action_space, possible_actions,
-            small_gamma, n_replicas, n_meas_for_average, beta)
+            n_bits_observation_space=n_bits_observation_space,
+            n_bits_action_space=n_bits_action_space,
+            small_gamma=small_gamma, n_replicas=n_replicas,
+            big_gamma=big_gamma, beta=beta,
+            n_annealing_steps=n_annealing_steps,
+            n_meas_for_average=n_meas_for_average)
 
-    def _initialise_training_episode(self, big_gamma: float) -> \
-            Tuple[int, float, np.ndarray, np.ndarray]:
+    def _initialise_training_episode(self) -> Tuple[int, float, np.ndarray,
+                                                    np.ndarray]:
         """
         This is a method used in the training loop to reinitialise an
         episode, either at the very beginning, or whenever an episode ends.
-        :param big_gamma: hyperparameter; current strength of the transverse
-        field (virtual, average value), see paper for details. Follows a
-        linear decay schedule.
         :return: action index, q_value, QUBO samples, state-action values of
         visible_nodes.
         """
         state = self.env.reset()
         action = self.env.action_space.sample()
-        q_value, samples, visible_nodes = self.q_function.calculate_q_value(
-            state, action, big_gamma)
+        q_value, samples, visible_nodes = (
+            self.q_function.calculate_q_value(state, action))
         return action, q_value, samples, visible_nodes
 
     def _get_all_state_vectors(self) -> List:
@@ -104,14 +108,10 @@ class QBMQN(object):
             all_states_binary.append(self.env.make_binary(s))
         return all_states_binary
 
-    def get_q_net_response(self, big_gamma: float) -> Tuple[np.ndarray,
-                                                            np.ndarray]:
+    def get_q_net_response(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Evaluate the (trained or untrained) Q net for all the possible
         state-action vectors.
-        :param big_gamma: hyperparameter; current strength of the transverse
-        field (virtual, average value), see paper for details. Follows a
-        linear decay schedule (see QBMQ class as well).
         :return: states converted to float for easier plotting, q values
         [dim. (#states, #actions)]
         """
@@ -121,11 +121,11 @@ class QBMQN(object):
 
         q_values = np.zeros((n_states, n_actions))
         states_float = np.zeros(n_states)
-        for i, s in enumerate(states_binary):
+        for j, s in enumerate(states_binary):
             for a in range(n_actions):
-                q, _, _ = self.q_function.calculate_q_value(s, a, big_gamma)
-                q_values[i, a] = q
-            states_float[i] = self.env.make_binary_state_float(s)
+                q, _, _ = self.q_function.calculate_q_value(s, a)
+                q_values[j, a] = q
+            states_float[j] = self.env.make_binary_state_float(s)
 
         return states_float, q_values
 
@@ -140,11 +140,12 @@ class QBMQN(object):
         #  environment expects, so we keep all instances of action, state,
         #  and visible_nodes up to date simultaneously.
 
+        # TODO: I think they are not actually playing out the episodes, but are
+        #  rather sweeping through the states (s1, a1) (either randomly or
+        #  systematically)
+
         # Epsilon decay schedule for epsilon-greedy policy
         epsilon = self._get_epsilon_schedule(total_timesteps)
-
-        # big_gamma decay schedule
-        big_gamma = self._get_big_gamma_schedule(total_timesteps)
 
         # learning_rate decay schedule
         learning_rate = self._get_learning_rate_schedule(total_timesteps)
@@ -158,15 +159,14 @@ class QBMQN(object):
             if done:
                 # Reinitialize the episode after previous one has ended
                 action, q_value, samples, visible_nodes = (
-                    self._initialise_training_episode(big_gamma[it]))
+                    self._initialise_training_episode())
 
             # Take the step in the environment
             next_state, reward, done, _ = env.step(action=action)
 
             # Choose next_action following the epsilon-greedy policy
             next_action, next_q_value, next_samples, next_visible_nodes = (
-                self.q_function.follow_policy(
-                    next_state, epsilon[it], big_gamma[it]))
+                self.follow_policy(next_state, epsilon[it]))
 
             # Update weights
             self.q_function.update_weights(samples, visible_nodes, q_value,
@@ -181,12 +181,55 @@ class QBMQN(object):
             samples = next_samples
             visible_nodes = next_visible_nodes
 
+    def follow_policy(self, state: np.ndarray, epsilon: float) -> \
+            Tuple[int, float, np.ndarray, np.ndarray]:
+        """
+        Follow the epsilon-greedy policy to get the next action. With
+        probability epsilon we pick a random action, and with probability
+        (1 - epsilon) we pick the action greedily, i.e. such that
+        a = argmax_a Q(s, a).
+        :param state: state that the environment is in (binary vector, directly
+        obtained from either env.reset(), or env.step()).
+        :param epsilon: probability for choosing random action.
+        :return: chosen action index, q_value, spin_configurations, state-action
+        values of visible_nodes
+        """
+        if np.random.random() < epsilon:
+            # Pick action randomly
+            action = random.choice(self.possible_actions)
+            q_value, spin_configurations, visible_nodes = (
+                self.q_function.calculate_q_value(state=state, action=action))
+            return action, q_value, spin_configurations, visible_nodes
+        else:
+            # Pick action greedily
+            # Since the Chimera graph (QBM) does not offer an input ->
+            # output layer structure in the classical Q-net sense, we have to
+            # loop through all the actions to calculate the Q value for every
+            # action to then pick the argmax_a Q
+            max_dict = {'q_value': float('-inf'), 'action': None,
+                        'spin_configurations': None, 'visible_nodes': None}
+
+            for action in self.possible_actions:
+                q_value, spin_configurations, visible_nodes = (
+                    self.q_function.calculate_q_value(
+                        state=state, action=action))
+
+                # TODO: what needs to be done is to pick action randomly in
+                #  case there are several actions with the same Q values.
+                if max_dict['q_value'] < q_value:
+                    max_dict['q_value'] = q_value
+                    max_dict['action'] = action
+                    max_dict['spin_configurations'] = spin_configurations
+                    max_dict['visible_nodes'] = visible_nodes
+
+            return (max_dict['action'], max_dict['q_value'],
+                    max_dict['spin_configurations'], max_dict['visible_nodes'])
+
     def predict(self, state, deterministic):
         """
         Based on the given state, we pick the best action (here we always
         pick the action greedily, i.e. epsilon = 0., as we are assuming that
-        the agent has been trained). Also we use the final value of the
-        transverse field (big_gamma parameter). This method is required to
+        the agent has been trained). This method is required to
         evaluate the trained agent.
         :param state: state encoded as binary-encoded vector as obtained from
         environment .reset() or .step()
@@ -196,8 +239,7 @@ class QBMQN(object):
         interface
         """
         action, q_value, samples, visible_nodes = (
-            self.q_function.follow_policy(
-                state=state, epsilon=0., big_gamma=self.big_gamma[1]))
+            self.follow_policy(state=state, epsilon=0.))
 
         return action, None
 
@@ -211,24 +253,14 @@ class QBMQN(object):
         """
         n_steps_decay = int(self.exploration_fraction * total_timesteps)
         eps_step = (
-            (self.exploration_final_eps - self.exploration_initial_eps) /
+            (self.exploration_epsilon_final - self.exploration_epsilon_init) /
             n_steps_decay)
         eps_decay = np.arange(
-            self.exploration_initial_eps, self.exploration_final_eps, eps_step)
-        eps = np.ones(total_timesteps) * self.exploration_final_eps
+            self.exploration_epsilon_init, self.exploration_epsilon_final,
+            eps_step)
+        eps = np.ones(total_timesteps) * self.exploration_epsilon_final
         eps[:n_steps_decay] = eps_decay
         return eps
-
-    def _get_big_gamma_schedule(self, total_timesteps: int) -> np.ndarray:
-        """
-        Calculates the linear decay schedule for the big_gamma parameter (
-        transverse field)
-        :param total_timesteps: total number of timesteps for the RL training.
-        :return: np array of big_gamma as a function of time step
-        """
-        gamma_decay = np.linspace(self.big_gamma[0], self.big_gamma[1],
-                                  total_timesteps)
-        return gamma_decay
 
     def _get_learning_rate_schedule(self, total_timesteps: int) -> np.ndarray:
         """
@@ -242,39 +274,43 @@ class QBMQN(object):
 
 
 if __name__ == "__main__":
-    N_BITS_OBSERVATION_SPACE = 8
-    simple_reward = True
-    small_gamma = 0.8
-    big_gamma = (0.5, 0.5)  # transverse field decay (assume linear schedule)
-    learning_rate = (1e-2, 5e-4)  # linear schedule for the learning rate
-    n_actions = 2
 
+    # Environment settings
+    N_BITS_OBSERVATION_SPACE = 8
+    n_actions = 2
+    simple_reward = True
+
+    # Agent and annealing settings
+    learning_rate = (1e-2, 5e-4)
+    small_gamma = 0.8
+    big_gamma = (20., 0.5)
+    beta = 2.
+
+    # Init. environment
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
                             simple_reward=simple_reward, n_actions=n_actions)
 
-    # Note that in the paper they mention the beta linear schedule,
-    # but actually this is only for the SA algorithm, not SQA (which is what
-    # we are going for here).
-    agent = QBMQN(env, n_replicas=25, n_meas_for_average=150,
-                  big_gamma=big_gamma, beta=(2., 2.), exploration_fraction=0.6,
-                  exploration_initial_eps=1.0, exploration_final_eps=0.04,
-                  small_gamma=small_gamma, learning_rate=learning_rate)
+    # Init. agent
+    agent = QBMQN(env=env, n_replicas=25, n_meas_for_average=150,
+                  n_annealing_steps=300, big_gamma=big_gamma, beta=beta,
+                  learning_rate=learning_rate, small_gamma=small_gamma,
+                  exploration_fraction=0.6, exploration_epsilon=(1.0, 0.04))
 
-    total_timesteps = 1000
-
-    # I think they are not playing out the episodes, but are actually
-    # sweeping through the states (s1, a1) (either randomly or systematically)
+    # Learning
+    total_timesteps = 500
     agent.learn(total_timesteps=total_timesteps)
+
+    # Show learning evolution
     hlp.plot_log(env, fig_title='Agent training')
 
-    # Agent evaluation
+    # Evaluate agent
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
                             simple_reward=simple_reward, n_actions=n_actions)
     hlp.evaluate_agent(env, agent, n_episodes=10,
                        make_plot=True, fig_title='Agent evaluation')
 
-    # Get response of the trained Q net (assume final big_gamma value)
-    states, q_values = agent.get_q_net_response(big_gamma=big_gamma[1])
+    # Get response of the trained Q net
+    states, q_values = agent.get_q_net_response()
 
     fig = plt.figure(1, figsize=(7, 5))
     ax = plt.gca()
