@@ -159,7 +159,7 @@ if __name__ == "__main__":
         'single_default': np.array([1]),
         'tau': np.linspace(0., 0.1, 6)
     }
-    scenario = 'n_steps_train'
+    scenario = 'single_default'
     scan_values = scan_scenarios[scenario]
 
     # Run the scan (adapt the correct kwarg)
@@ -169,14 +169,14 @@ if __name__ == "__main__":
     tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
     for i, val in enumerate(tqdm_scan_values):
         scan_params = dict(
-            exploration_fraction=0.8, exploration_final_eps=0.04,
+            exploration_fraction=0.6, exploration_final_eps=0.03,
             policy_kwargs=dict(net_arch=[8] * 2),
-            gamma=0.99, tau=0.5, learning_rate=0.0005,
-            target_update_interval=800, train_freq=6)
+            gamma=0.8, tau=0.1, learning_rate=0.0005,
+            target_update_interval=100, train_freq=3)
 
         metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
             scan_params=scan_params,
-            n_steps_train=val, max_steps_per_episode=20,
-            n_evaluations=3, simple_reward=True, make_plots=False)
+            n_steps_train=60000, max_steps_per_episode=40,
+            n_evaluations=1, simple_reward=True, make_plots=True)
 
     show_scan_result(scan_values, metrics_avg, metrics_std, scenario)
