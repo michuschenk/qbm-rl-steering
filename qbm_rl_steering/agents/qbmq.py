@@ -9,7 +9,7 @@ import random
 import math
 import tqdm
 
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 
 # TODO: group arguments using dicts...
 # TODO: implement double Q
@@ -71,14 +71,15 @@ class QBMQN(object):
         self.exploration_epsilon_final = exploration_epsilon[1]
 
         # Q function approximation (RL state-action value function)
-        n_bits_observation_space = env.n_bits_observation_space
-        n_bits_action_space = math.ceil(math.log2(env.action_space.n))
+        n_bits_observation_space = self.env.n_bits_observation_space
+        n_bits_action_space = math.ceil(math.log2(self.env.action_space.n))
         # This is in case where env.action_space.n == 1 (does not make much
         # sense from RL point-of-view)
-        if env.action_space.n < 2:
+        if self.env.action_space.n < 2:
             n_bits_action_space = 1
 
-        self.possible_actions = [act for act in range(env.action_space.n)]
+        self.possible_actions = [
+            act for act in range(self.env.action_space.n)]
         self.q_function = utl.QFunction(
             n_bits_observation_space=n_bits_observation_space,
             n_bits_action_space=n_bits_action_space,
@@ -122,10 +123,80 @@ class QBMQN(object):
 
         return states_float, q_values
 
-    def learn(self, total_timesteps: int) -> None:
+    def learn_systematic(self, total_timesteps: int, mode: str = 'sweep') \
+            -> List:
+        """
+        Follow more what they do in the paper (at least according to my
+        understanding). Pick one state and action pair (s1, a1) and just
+        do one step from there, i.e. don't play out the episodes as we
+        usually do in episodic RL. We will have the possibility to pick
+        the pair (s1, a1) randomly (mode = 'random'), or go through all
+        the state-action pairs systematically (mode = 'sweep').
+        :param total_timesteps: number of training steps
+        :param mode: decides how we pick the first state-action pair
+        (s1, a1)
+        return: list of visited states during the training
+        """
+        # This is just for debugging: keep track which of the states have been
+        # visited
+        visited_states = []
+
+        # learning_rate decay schedule
+        learning_rate = self._get_learning_rate_schedule(total_timesteps)
+
+        all_states_float, all_states_binary = self.env.get_all_states()
+        if total_timesteps < len(all_states_binary):
+            print('****** WARNING: total_timesteps < number of states')
+
+        if mode == 'sweep':
+
+            pbar = tqdm.tqdm(total=total_timesteps, position=0, leave=True)
+            it = 0
+            while it < total_timesteps:
+                for j, s1 in enumerate(all_states_binary):
+                    a1 = np.random.choice(self.env.action_space.n)
+
+                    # Put environment in that state (need to use float)
+                    _ = self.env.reset(init_state=all_states_float[j])
+                    visited_states.append(
+                        self.env.make_binary_state_float(self.env.state))
+
+                    # Calc. q value of the (s1, a1) pairß
+                    q_s1_a1, spin_configs, vis_nodes = (
+                        self.q_function.calculate_q_value(
+                            state=s1, action=a1))
+
+                    # Take the step in the environment
+                    s2, reward, done, _ = self.env.step(action=a1)
+
+                    # Choose next_action following greedy policy (?)
+                    # It looks like it's always argmax Q in the paper (alg. 3)
+                    a2, q_s2_a2, next_spin_configs, next_vis_nodes = (
+                        self.follow_policy(s2, epsilon=0.))
+
+                    # Update weights
+                    self.q_function.update_weights(
+                        spin_configs, vis_nodes, q_s1_a1,
+                        q_s2_a2, reward, learning_rate[it])
+
+                    it += 1
+                    pbar.update(1)
+                    if it >= total_timesteps:
+                        break
+            pbar.close()
+        else:
+            raise NotImplementedError("Only mode 'sweep' is allowed " +
+                                      "at the moment")
+        return visited_states
+
+    def learn(self, total_timesteps: int,
+              play_out_episode: bool = True) -> List:
         """
         Train the agent for the specified number of iterations.
         :param total_timesteps: number of training steps
+        :param play_out_episode: if True the episodes will be played until
+        the end, otherwise only 1 step is performed in every iteration.
+        :return list of visited states during the training
         """
         # TODO: there is still a slight 'inconsistency' because the
         #  visible_nodes vector actually already contains the state and
@@ -133,9 +204,9 @@ class QBMQN(object):
         #  environment expects, so we keep all instances of action, state,
         #  and visible_nodes up to date simultaneously.
 
-        # TODO: I think they are not actually playing out the episodes, but are
-        #  rather sweeping through the states (s1, a1) (either randomly or
-        #  systematically). Implement that.
+        # This is just for debugging: keep track which of the states have been
+        # visited
+        visited_states = []
 
         # Epsilon decay schedule for epsilon-greedy policy
         epsilon = self._get_epsilon_schedule(total_timesteps)
@@ -151,28 +222,37 @@ class QBMQN(object):
         for it in tqdm.trange(total_timesteps):
             if done:
                 # Reinitialize the episode after previous one has ended
-                action, q_value, samples, visible_nodes = (
+                # Random initialization
+                action, q_value, spin_configs, visible_nodes = (
                     self._initialise_training_episode())
 
+            visited_states.append(
+                self.env.make_binary_state_float(self.env.state))
+
             # Take the step in the environment
-            next_state, reward, done, _ = env.step(action=action)
+            next_state, reward, done, _ = self.env.step(action=action)
 
             # Choose next_action following the epsilon-greedy policy
             next_action, next_q_value, next_samples, next_visible_nodes = (
                 self.follow_policy(next_state, epsilon[it]))
 
             # Update weights
-            self.q_function.update_weights(samples, visible_nodes, q_value,
-                                           next_q_value, reward,
-                                           learning_rate[it])
+            self.q_function.update_weights(
+                spin_configs, visible_nodes, q_value,
+                next_q_value, reward, learning_rate[it])
 
             # Note that environment is already in next_state, so this line
             # should not be necessary
             # state = next_state
             action = next_action
             q_value = next_q_value
-            samples = next_samples
+            spin_configs = next_samples
             visible_nodes = next_visible_nodes
+
+            if not play_out_episode:
+                done = True
+
+        return visited_states
 
     def follow_policy(self, state: np.ndarray, epsilon: float) -> \
             Tuple[int, float, np.ndarray, np.ndarray]:
@@ -266,69 +346,226 @@ class QBMQN(object):
         return learning_decay
 
 
+def find_policy_from_q(agent: QBMQN) -> Tuple[
+        np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get response of the trained "Q-net" for all possible (state, action) and
+    then calculate optimal policy according to learned Q values.
+    """
+    states, q_values = agent.get_q_net_response()
+
+    best_action = np.ones(len(states), dtype=int) * -1
+    for i in range(len(states)):
+        best_action[i] = np.argmax(q_values[i, :])
+    return states, q_values, best_action
+
+
+def plot_agent_evaluation(
+        states_q: np.ndarray, q_values: np.ndarray, best_action: np.ndarray,
+        states_v: np.ndarray, v_star_values: np.ndarray,
+        visited_states: np.ndarray) -> None:
+    """
+    Plot the evaluation of the agent after training.
+    """
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(6, 7))
+
+    # Value functions
+    cols = ['tab:red', 'tab:blue']
+    for i in range(q_values.shape[1]):
+        axs[0].plot(1e3 * states_q, q_values[:, i], c=cols[i], label=f'Action {i}')
+
+    # MC agent results
+    axs[0].plot(1e3 * states_v, v_star_values, c='k', label='V* (MC)')
+    axs[0].set_ylabel('Q value')
+    axs[0].legend(loc='upper right')
+
+    # Plot policy
+    for a in list(set(best_action)):
+        msk_a = best_action == a
+        axs[1].plot(1e3 * states_q[msk_a], best_action[msk_a],
+                    marker='o', ms=3, ls='None', c=cols[a])
+    axs[1].set_ylabel('Best action')
+
+    # What states have been visited and how often?
+    axs[2].hist(1e3 * np.array(visited_states), bins=100)
+    axs[2].set_xlabel('State, BPM pos. (mm)')
+    axs[2].set_ylabel('# visits')
+
+    plt.show()
+
+
+def calculate_policy_goodness(env: TargetSteeringEnv, states: np.ndarray,
+                              best_action: np.ndarray) -> np.ndarray:
+    """
+    Metric for goodness of policy: we can do this because we know the
+    optimal policy already. Measure how many of the actions are correct
+    according to the Q-functions that we learned. We only judge actions
+    for states outside of reward threshold (inside episode is anyway over
+    after 1 step and agent has no way to learn what's best there.
+    """
+    _, x, r = env.get_response()
+    idx = np.where(r > env.reward_threshold)[0][-1]
+    x_reward_thresh = x[idx]
+    n_states_total = np.sum(
+        (states < -x_reward_thresh) | (states > x_reward_thresh))
+
+    # How many of the actions that the agent would take are actually
+    # according to optimal policy? (this is environment dependent and
+    # something we can do because we know the optimal policy).
+    n_correct_actions = np.sum(
+        (best_action == 0) & (states < -x_reward_thresh))
+    n_correct_actions += np.sum(
+        (best_action == 1) & (states > x_reward_thresh))
+
+    policy_eval = 100 * n_correct_actions / float(n_states_total)
+    print(f'Goodness of policy: {policy_eval:.1f}%')
+    return policy_eval
+
+
+def train_and_evaluate_agent(
+        kwargs_env: Dict, kwargs_rl: Dict, kwargs_anneal: Dict,
+        total_timesteps: int, make_plots: bool = True) -> float:
+    """
+
+    """
+    # Initialize environment
+    env = TargetSteeringEnv(**kwargs_env)
+
+    # Initialize agent and train
+    agent = QBMQN(env=env, **kwargs_anneal, **kwargs_rl)
+    visited_states = agent.learn(total_timesteps=total_timesteps,
+                                 play_out_episode=True)
+    # When using learn_systematic it's best to make sure you sweep through
+    # all states at least once.
+    # visited_states = agent.learn_systematic(total_timesteps=total_timesteps)
+
+    # Run Monte Carlo agent
+    mc_agent = MonteCarloAgent(env, gamma=kwargs_rl['small_gamma'])
+    states_v, v_star_values = mc_agent.run_mc(200)
+
+    # Plot learning evolution (note that this does not work when we either
+    # set play_out_episode to True or when using learn_systematic.
+    # hlp.plot_log(env, fig_title='Agent training')
+
+    # Evaluate the agent
+    # Evaluate agent on random initial states
+    # env = TargetSteeringEnv(**kwargs_env)
+    # hlp.evaluate_agent(env, agent, n_episodes=10, make_plot=True,
+    #                    fig_title = 'Agent evaluation')
+
+    states_q, q_values, best_action = find_policy_from_q(agent)
+    if make_plots:
+        plot_agent_evaluation(
+            states_q, q_values, best_action, states_v, v_star_values,
+            visited_states)
+
+    policy_goodness = calculate_policy_goodness(env, states_q, best_action)
+    return policy_goodness
+
+
 if __name__ == "__main__":
 
+    run_type = '1d_scan'
+    n_repeats_scan = 5  # How many times to run the same parameters in scans
+
     # Environment settings
-    N_BITS_OBSERVATION_SPACE = 8
-    n_actions = 2
-    simple_reward = True
+    kwargs_env = {
+        'n_bits_observation_space': 8,
+        'n_actions': 2,
+        'simple_reward': True,
+        'max_steps_per_episode': 20
+    }
 
     # RL settings
-    learning_rate = (1e-3, 1e-3)
-    small_gamma = 0.8
-    exploration_epsilon = (1.0, 0.04)
-    exploration_fraction = 0.6
+    kwargs_rl = {
+        'learning_rate': (2e-2, 8e-4),
+        'small_gamma': 0.8,
+        'exploration_epsilon': (1.0, 0.04),
+        'exploration_fraction': 0.6
+    }
 
     # Graph config and quantum annealing settings
     # Commented values are what's in the paper
-    n_graph_nodes = 16
-    n_replicas = 25  # 25
-    n_meas_for_average = 20  # 150
-    n_annealing_steps = 100  # 300
-    big_gamma = (20., 0.5)
-    beta = 2.
+    kwargs_anneal = {
+        'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
+        'n_replicas': 25,  # 25
+        'n_meas_for_average': 10,  # 150
+        'n_annealing_steps': 100,  # 300
+        'big_gamma': (20., 0.5),
+        'beta': 1.
+    }
 
-    # Init. environment
-    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
-                            simple_reward=simple_reward, n_actions=n_actions)
+    # Training time steps
+    total_timesteps = 20  # 500
 
-    # Initialize agent
-    agent = QBMQN(env=env, n_graph_nodes=n_graph_nodes, n_replicas=n_replicas,
-                  n_meas_for_average=n_meas_for_average,
-                  n_annealing_steps=n_annealing_steps, big_gamma=big_gamma,
-                  beta=beta, learning_rate=learning_rate,
-                  small_gamma=small_gamma,
-                  exploration_fraction=exploration_fraction,
-                  exploration_epsilon=exploration_epsilon)
+    if run_type == 'single':
+        make_plots = True
+        train_and_evaluate_agent(
+            kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
+            kwargs_anneal=kwargs_anneal, total_timesteps=total_timesteps,
+            make_plots=make_plots)
 
-    # Train agent
-    total_timesteps = 100  # 500
-    agent.learn(total_timesteps=total_timesteps)
+    elif run_type == '1d_scan':
+        make_plots = False
 
-    # Plot learning evolution
-    hlp.plot_log(env, fig_title='Agent training')
+        lr_arr = np.array([2e-2, 8e-3, 5e-3, 2e-3])
+        results = np.zeros((n_repeats_scan, len(lr_arr)))
 
-    # Evaluate agent on random initial states
-    # env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
-    #                         simple_reward=simple_reward, n_actions=n_actions)
-    # hlp.evaluate_agent(env, agent, n_episodes=10,
-    #                    make_plot=True, fig_title='Agent evaluation')
+        for k, lr in enumerate(lr_arr):
+            kwargs_rl.update({'learning_rate': (lr, 8e-4)})
+            for m in range(n_repeats_scan):
+                results[m, k] = train_and_evaluate_agent(
+                    kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
+                    kwargs_anneal=kwargs_anneal,
+                    total_timesteps=total_timesteps,
+                    make_plots=make_plots)
 
-    # Get response of the trained "Q-net" for all possible (state, action) pairs
-    states, q_values = agent.get_q_net_response()
+        # Plot scan summary
+        plt.figure(1, figsize=(6, 5))
+        (h, caps, _) = plt.errorbar(
+            lr_arr, np.mean(results, axis=0),
+            yerr=np.std(results, axis=0) / np.sqrt(n_repeats_scan),
+            capsize=4, elinewidth=2, color='tab:red')
 
-    fig = plt.figure(1, figsize=(7, 5))
-    ax = plt.gca()
-    cols = ['tab:red', 'tab:blue']
-    for i in range(q_values.shape[1]):
-        ax.plot(1e3*states, q_values[:, i], c=cols[i], label=f'Action {i}')
+        for cap in caps:
+            cap.set_color('tab:red')
+            cap.set_markeredgewidth(2)
 
-    # MC agent
-    mc_agent = MonteCarloAgent(env, gamma=small_gamma)
-    states_v, v_star = mc_agent.run_mc(200)
-    ax.plot(1e3*states_v, v_star, c='k', label='V* (MC)')
+        plt.xlabel('Initial learning rate')
+        plt.ylabel('Goodness policy (%)')
+        plt.show()
 
-    ax.set_xlabel('State, BPM pos. (mm)')
-    ax.set_ylabel('Q value')
-    ax.legend(loc='upper right')
-    plt.show()
+    else:
+        # Assume 2d_scan
+        make_plots = False
+
+        big_gamma_f_arr = np.array([0.2, 0.5, 1.])
+        beta_arr = np.array([1., 2., 3.])
+        results = np.zeros((n_repeats_scan, len(big_gamma_f_arr), len(beta_arr)))
+
+        for k, bg_f in enumerate(big_gamma_f_arr):
+            for l, beta in enumerate(beta_arr):
+                for m in range(n_repeats_scan):
+                    kwargs_anneal.update({'big_gamma': (20., bg_f),
+                                          'beta': beta})
+
+                    results[m, k, l] = train_and_evaluate_agent(
+                        kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
+                        kwargs_anneal=kwargs_anneal,
+                        total_timesteps=total_timesteps,
+                        make_plots=make_plots)
+
+        # Plot scan summary
+        plt.figure(1, figsize=(6, 5))
+        plt.imshow(np.flipud(np.means(results.T, axis=0)))
+        cbar = plt.colorbar()
+
+        plt.xticks(range(len(beta_arr)),
+                   labels=[i for i in beta_arr])
+        plt.yticks(range(len(big_gamma_f_arr)),
+                   labels=[i for i in big_gamma_f_arr[::-1]])
+
+        plt.xlabel('beta')
+        plt.ylabel('big_gamma_f')
+        cbar.set_label('Goodness policy (%)')
+        plt.show()
