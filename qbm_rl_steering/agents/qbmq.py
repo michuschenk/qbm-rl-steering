@@ -14,11 +14,14 @@ from typing import Tuple, List
 # TODO: group arguments using dicts...
 # TODO: implement double Q
 # TODO: implement replay buffer
+# TODO: parallel agents
 # TODO: implement save and load weights
 
 
 class QBMQN(object):
-    def __init__(self, env: TargetSteeringEnv, n_replicas: int,
+    def __init__(self, env: TargetSteeringEnv,
+                 n_graph_nodes: int,
+                 n_replicas: int,
                  n_meas_for_average: int,
                  n_annealing_steps: int,
                  big_gamma: Tuple[float, float] = (20., 0.5),
@@ -32,6 +35,8 @@ class QBMQN(object):
         Implementation of the QBM-RL Q-learning agent, following the paper:
         https://arxiv.org/pdf/1706.00074.pdf
         :param env: OpenAI gym environment
+        :param n_graph_nodes: number of nodes of the graph structure. E.g. for
+        2 unit cells of the DWAVE-2000 chip, it's 16 nodes (8 per unit).
         :param n_replicas: number of replicas in the 3D extension of the Ising
         model, see Fig. 1 in paper. (aka Trotter slices).
         :param n_meas_for_average: number of 'independent spin configuration
@@ -77,7 +82,9 @@ class QBMQN(object):
         self.q_function = utl.QFunction(
             n_bits_observation_space=n_bits_observation_space,
             n_bits_action_space=n_bits_action_space,
-            small_gamma=small_gamma, n_replicas=n_replicas,
+            small_gamma=small_gamma,
+            n_graph_nodes=n_graph_nodes,
+            n_replicas=n_replicas,
             big_gamma=big_gamma, beta=beta,
             n_annealing_steps=n_annealing_steps,
             n_meas_for_average=n_meas_for_average)
@@ -96,18 +103,6 @@ class QBMQN(object):
             self.q_function.calculate_q_value(state, action))
         return action, q_value, samples, visible_nodes
 
-    def _get_all_state_vectors(self) -> List:
-        """
-        Create all possible state vectors (binary encoded)
-        :return: np array of state vectors
-        """
-        # Create systematically all possible state vectors in binary format
-        all_states = np.arange(2**self.env.n_bits_observation_space)
-        all_states_binary = []
-        for s in all_states:
-            all_states_binary.append(self.env.make_binary(s))
-        return all_states_binary
-
     def get_q_net_response(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Evaluate the (trained or untrained) Q net for all the possible
@@ -115,17 +110,15 @@ class QBMQN(object):
         :return: states converted to float for easier plotting, q values
         [dim. (#states, #actions)]
         """
-        states_binary = self._get_all_state_vectors()
+        states_float, states_binary = self.env.get_all_states()
         n_states = len(states_binary)
         n_actions = self.env.action_space.n
 
         q_values = np.zeros((n_states, n_actions))
-        states_float = np.zeros(n_states)
         for j, s in enumerate(states_binary):
             for a in range(n_actions):
                 q, _, _ = self.q_function.calculate_q_value(s, a)
                 q_values[j, a] = q
-            states_float[j] = self.env.make_binary_state_float(s)
 
         return states_float, q_values
 
@@ -142,7 +135,7 @@ class QBMQN(object):
 
         # TODO: I think they are not actually playing out the episodes, but are
         #  rather sweeping through the states (s1, a1) (either randomly or
-        #  systematically)
+        #  systematically). Implement that.
 
         # Epsilon decay schedule for epsilon-greedy policy
         epsilon = self._get_epsilon_schedule(total_timesteps)
@@ -280,9 +273,18 @@ if __name__ == "__main__":
     n_actions = 2
     simple_reward = True
 
-    # Agent and annealing settings
-    learning_rate = (1e-2, 5e-4)
+    # RL settings
+    learning_rate = (1e-3, 1e-3)
     small_gamma = 0.8
+    exploration_epsilon = (1.0, 0.04)
+    exploration_fraction = 0.6
+
+    # Graph config and quantum annealing settings
+    # Commented values are what's in the paper
+    n_graph_nodes = 16
+    n_replicas = 25  # 25
+    n_meas_for_average = 20  # 150
+    n_annealing_steps = 100  # 300
     big_gamma = (20., 0.5)
     beta = 2.
 
@@ -290,27 +292,29 @@ if __name__ == "__main__":
     env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
                             simple_reward=simple_reward, n_actions=n_actions)
 
-    # Init. agent
-    agent = QBMQN(env=env, n_replicas=25, n_meas_for_average=150,
-                  n_annealing_steps=300, big_gamma=big_gamma, beta=beta,
-                  learning_rate=learning_rate, small_gamma=small_gamma,
-                  exploration_fraction=0.6, exploration_epsilon=(1.0, 0.04))
+    # Initialize agent
+    agent = QBMQN(env=env, n_graph_nodes=n_graph_nodes, n_replicas=n_replicas,
+                  n_meas_for_average=n_meas_for_average,
+                  n_annealing_steps=n_annealing_steps, big_gamma=big_gamma,
+                  beta=beta, learning_rate=learning_rate,
+                  small_gamma=small_gamma,
+                  exploration_fraction=exploration_fraction,
+                  exploration_epsilon=exploration_epsilon)
 
-    # Learning
-    # total_timesteps = 500
-    total_timesteps = 10
+    # Train agent
+    total_timesteps = 100  # 500
     agent.learn(total_timesteps=total_timesteps)
 
-    # Show learning evolution
+    # Plot learning evolution
     hlp.plot_log(env, fig_title='Agent training')
 
-    # Evaluate agent
-    env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
-                            simple_reward=simple_reward, n_actions=n_actions)
-    hlp.evaluate_agent(env, agent, n_episodes=10,
-                       make_plot=True, fig_title='Agent evaluation')
+    # Evaluate agent on random initial states
+    # env = TargetSteeringEnv(n_bits_observation_space=N_BITS_OBSERVATION_SPACE,
+    #                         simple_reward=simple_reward, n_actions=n_actions)
+    # hlp.evaluate_agent(env, agent, n_episodes=10,
+    #                    make_plot=True, fig_title='Agent evaluation')
 
-    # Get response of the trained Q net
+    # Get response of the trained "Q-net" for all possible (state, action) pairs
     states, q_values = agent.get_q_net_response()
 
     fig = plt.figure(1, figsize=(7, 5))

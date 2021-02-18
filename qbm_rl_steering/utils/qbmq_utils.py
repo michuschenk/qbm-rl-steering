@@ -78,14 +78,15 @@ def create_general_qubo_dict(
 
 
 def get_average_effective_hamiltonian(
-        samples: np.ndarray, w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray,
-        big_gamma_final: float, beta: float) -> float:
+        spin_configurations: np.ndarray, w_hh: Dict, w_vh: Dict,
+        visible_nodes: np.ndarray, big_gamma_final: float, beta: float)\
+        -> float:
     """
     This method calculates the average effective Hamiltonian as given in
     Eq. (9) in paper: https://arxiv.org/pdf/1706.00074.pdf , using samples
     obtained from DWAVE QUBO sample method.
-    :param samples: samples returned by the DWAVE sample() method, but
-    converted to numpy array and reshaped to
+    :param spin_configurations: samples returned by the DWAVE sample() method,
+    but converted to numpy array and reshaped to
     (n_meas_for_average, n_replicas, n_hidden_nodes). The samples contain the
     spin states (1 or -1) of all the hidden nodes.
     :param w_hh: dictionary of coupling weights (quadratic coefficients)
@@ -100,25 +101,24 @@ def get_average_effective_hamiltonian(
     :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
     binary vectors ({-1, +1}) of the concatenated states and action vectors
     (length: n_bits_observation_space + n_bits_action_space).
-    :param big_gamma_final: hyperparameter; final, i.e. at the end of the SQA,
-    strength of the transverse field (virtual, average value), see paper for
-    details.
+    :param big_gamma_final: final, i.e. at the end of the SQA, strength of
+    the transverse field (virtual, average value), see paper for details.
     :param beta: Inverse temperature (note that this parameter is kept
     constant in SQA other than in SA).
     :return: single float; effective Hamiltonian averaged over the individual
     measurements.
     """
-    _, n_replicas, _ = samples.shape
+    _, n_replicas, _ = spin_configurations.shape
 
     # FIRST TERM, sum over h, h' in Eq. (9)
     h_sum_1 = 0.
     for (h, h_prime), w in w_hh.items():
-        h_sum_1 += w * samples[:, :, h] * samples[:, :, h_prime]
+        h_sum_1 += w * spin_configurations[:, :, h] * spin_configurations[:, :, h_prime]
 
     # SECOND term, sum over v, h in Eq. (9)
     h_sum_2 = 0.
     for (v, h), w in w_vh.items():
-        h_sum_2 += w * visible_nodes[v] * samples[:, :, h]
+        h_sum_2 += w * visible_nodes[v] * spin_configurations[:, :, h]
 
     # Sum over replicas (sum over k), divide by n_replicas, and negate
     # This corresponds to the first line in Eq. (9)
@@ -134,8 +134,12 @@ def get_average_effective_hamiltonian(
     # I think there is a typo in Eq. (9). The summation index in w+(.. + ..)
     # of the first term should only go from k=1 to r-1.
     hk_hkplus1_sum = np.sum(np.sum(
-        samples[:, :-1, :] * samples[:, 1:, :], axis=1), axis=-1)
-    h1_hr_sum = np.sum(samples[:, -1, :] * samples[:, 0, :], axis=-1)
+        spin_configurations[:, :-1, :] * spin_configurations[:, 1:, :],
+        axis=1),
+        axis=-1)
+    h1_hr_sum = np.sum(
+        spin_configurations[:, -1, :] * spin_configurations[:, 0, :],
+        axis=-1)
     h_sum_3 = -w_plus * (hk_hkplus1_sum + h1_hr_sum)
 
     # Take average over n_meas_for_average
@@ -172,7 +176,8 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
 
 class QFunction(object):
     def __init__(self, n_bits_observation_space: int,
-                 n_bits_action_space: int, small_gamma: float, n_replicas: int,
+                 n_bits_action_space: int, small_gamma: float,
+                 n_graph_nodes: int, n_replicas: int,
                  big_gamma: Tuple[float, float], beta: float,
                  n_annealing_steps: int, n_meas_for_average: int) -> None:
         """
@@ -184,6 +189,8 @@ class QFunction(object):
         actions that are possible in the given environment
         :param small_gamma: RL parameter, discount factor for
         cumulative future rewards.
+        :param n_graph_nodes: number of nodes of the graph structure. E.g. for
+        2 unit cells of the DWAVE-2000 chip, it's 16 nodes (8 per unit).
         :param n_replicas: number of replicas (aka. Trotter slices) in the 3D
         extension of the Ising model, see Fig. 1 in paper:
         https://arxiv.org/pdf/1706.00074.pdf
@@ -196,7 +203,7 @@ class QFunction(object):
         :param n_annealing_steps: number of steps that one annealing
         process should take (~annealing time).
         """
-        self.sqa = SQA(big_gamma, beta, n_replicas)
+        self.sqa = SQA(big_gamma, beta, n_replicas, n_nodes=n_graph_nodes)
         self.n_annealing_steps = n_annealing_steps
         self.n_meas_for_average = n_meas_for_average
 
