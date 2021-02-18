@@ -45,21 +45,13 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
 
 
 def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
-                        fig_title: str = ''):
+                        fig_title: str = '') -> None:
     """
     The idea is to plot the Q-net of the agent (to look inside the
     agent's brain...) versus the state and action axis.
     """
     angles, x_bpm, rewards = env.get_response()
-
-    # Evaluate q-net
-    states = np.linspace(
-        env.x_min, env.x_max, 2**env.n_bits_observation_space)
-
-    # Convert states to discrete, binary
-    states_binary = []
-    for s in states:
-        states_binary.append(env._make_state_discrete_binary(s))
+    states_float, states_binary = env.get_all_states()
 
     # Convert to Torch tensor, and run it through the q-net
     states_binary = th.tensor(states_binary)
@@ -69,14 +61,17 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     fig.suptitle(fig_title)
 
     axs[0].plot(1e3*x_bpm, rewards, c='forestgreen')
-    axs[0].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
-    axs[0].axhline(env.get_max_reward(), c='k', ls='-', label='Max. reward')
+    axs[0].axhline(env.reward_threshold, c='k', ls='--',
+                   label='Target reward')
+    axs[0].axhline(env.get_max_reward(), c='k', ls='-',
+                   label='Max. reward')
     axs[0].legend(loc='upper right')
     axs[0].set_ylabel('Reward')
 
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
-        axs[1].plot(1e3*states, q_values[:, i], c=cols[i], label=f'Action {i}')
+        axs[1].plot(1e3*states_float, q_values[:, i], c=cols[i],
+                    label=f'Action {i}')
 
     # Run Monte Carlo to get V* values
     mc_agent = MonteCarloAgent(env, gamma=agent.gamma)

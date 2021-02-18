@@ -1,3 +1,5 @@
+from typing import Tuple, List, Dict
+
 import numpy as np
 import math
 from scipy.integrate import quad
@@ -19,7 +21,7 @@ class TwissElement:
 
 
 def transport(element1: TwissElement, element2: TwissElement, x: float,
-              px: float) -> (float, float):
+              px: float) -> Tuple[float, float]:
     """ Transport (x, xp) coordinate-momentum pair from element 1 to element 2
     using linear transport.
     :param element1: the first Twiss element, starting point
@@ -89,11 +91,10 @@ class TargetSteeringEnv(gym.Env):
         # least x_delta)
         x_min_plus_delta, _ = self.get_pos_at_bpm_target(
             self.mssb_angle_min + self.mssb_delta)
-        x_delta = x_min_plus_delta - self.x_min
-        self.x_delta = x_delta
-        self.x_margin_discretization = 8 * x_delta
+        self.x_delta = x_min_plus_delta - self.x_min
+        self.x_margin_discretization = 3 * self.x_delta
         self.x_margin_abort_episode = (
-                self.x_margin_discretization - 1.5 * x_delta)
+                self.x_margin_discretization - 2. * self.x_delta)
 
         # GYM REQUIREMENTS
         # Define action space with 2 or 3 discrete actions. Action_map defines
@@ -128,7 +129,7 @@ class TargetSteeringEnv(gym.Env):
         self.logger = Logger()
         self.debug = debug
 
-    def step(self, action: int) -> (np.ndarray, float, bool, dict):
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict]:
         """ Perform one step in the environment (take an action, update
         parameters in environment, receive reward, check if episode ends,
         append all info to logger, return new state, reward, etc.
@@ -183,7 +184,7 @@ class TargetSteeringEnv(gym.Env):
             if reward > self.reward_threshold:
                 reward = 100.
             else:
-                reward = 0.
+                reward = -1.
 
         # Log history
         self.logger.log_episode.append(
@@ -193,34 +194,16 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state, reward, done, {}
 
-    def end_training(self):
-        """ Call at the end of the training to append the episode log to the
-        log_all. Not sure if this is necessary. Maybe better to drop the last
-        episode which is incomplete. """
-        try:
-            # Append the last episode if it has not already been 'done'
-            if not self.logger.log_episode[-1][4]:
-                self.logger.log_all.append(self.logger.log_episode)
-        except IndexError:
-            pass
-
     def reset(self, init_mssb_angle: float = None) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta, get the initial state, and reset logger. This method
         gets called e.g. at the end of an episode.
         :return an initial state """
-        # Initialize the mssb_angle as a multiple of mssb_delta and calculate
-        # the corresponding position at the BPM (= state)
-        # idx_max = (self.mssb_angle_max - self.mssb_angle_min) / self.mssb_delta
-        # idx = np.random.randint(idx_max)
-        # self.mssb_angle = self.mssb_angle_min + idx * self.mssb_delta
-
         if init_mssb_angle is None:
             # Initialize mssb_angle within self.mssb_angle_min and
             # self.mssb_angle_max
-            self.mssb_angle = np.random.uniform(low=self.mssb_angle_min,
-                                                high=self.mssb_angle_max,
-                                                size=1)[0]
+            self.mssb_angle = np.random.uniform(
+                low=self.mssb_angle_min, high=self.mssb_angle_max, size=1)[0]
         else:
             self.mssb_angle = init_mssb_angle
 
@@ -260,9 +243,10 @@ class TargetSteeringEnv(gym.Env):
             -3*sigma, 3*sigma)
 
         reward = self.intensity_on_target[0]
+
         return reward
 
-    def get_pos_at_bpm_target(self, total_angle: float) -> (float, float):
+    def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:
         """ Transports beam through the transfer line and calculates the
         position at the BPM and at the target. These are required for the reward
         calculation and to get the state based on the currently set dipole
@@ -336,7 +320,7 @@ class TargetSteeringEnv(gym.Env):
         _, _, rewards = self.get_response()
         return np.max(rewards)
 
-    def get_response(self) -> (np.ndarray, np.ndarray, np.ndarray):
+    def get_response(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Calculate response of the environment, i.e. the x_position and
         reward dependence on the dipole kick angle (for the full available
         range of angles).
@@ -350,6 +334,28 @@ class TargetSteeringEnv(gym.Env):
             x_pos[i] = x
             rewards[i] = r
         return angles, x_pos, rewards
+
+    def get_all_states(self) -> Tuple[np.ndarray, List]:
+        """
+        Return a list of all the possible states that the system can be in
+        in binary encoded form. This is only considering the actual range
+        that does not lead to an episode abort.
+        :return tuple of np array and List of all possible states in float
+        and binary form {-1, 1} resp.
+        """
+        # Allowed range of states (float)
+        states_float = np.arange(
+            self.x_min - self.x_margin_abort_episode,
+            self.x_max + self.x_margin_abort_episode +
+            self.observation_bin_width / 2.,
+            self.observation_bin_width)
+
+        # Convert to binary vectors
+        states_binary = []
+        for s in states_float:
+            states_binary.append(self._make_state_discrete_binary(s))
+
+        return states_float, states_binary
 
     def get_max_n_steps_optimal_behaviour(self) -> int:
         """ Calculate maximum number of steps required to solve the problem
