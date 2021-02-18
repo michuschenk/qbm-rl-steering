@@ -50,7 +50,7 @@ def init_agent(env: TargetSteeringEnv, scan_params: dict = None) -> DQN:
 
 
 def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
-                         n_episodes_test: int = 200,
+                         n_episodes_test: int = 300,
                          max_steps_per_episode: int = 20,
                          scan_params: dict = None, make_plots: bool = False,
                          simple_reward: bool = True) \
@@ -146,6 +146,10 @@ def show_scan_result(scan_values: np.ndarray, metric_avg: np.ndarray,
 
 
 if __name__ == "__main__":
+
+    # TODO: improve scans in a way similar to qbmq.py, e.g. adding kwargs for
+    #  all the parameters and just separating by scan type (single, 1d, 2d).
+
     # env = test_environment()
 
     # Scenarios for parameter scans
@@ -170,14 +174,14 @@ if __name__ == "__main__":
     tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
     for i, val in enumerate(tqdm_scan_values):
         scan_params = dict(
-            exploration_fraction=0.6, exploration_final_eps=0.03,
+            exploration_fraction=0.6, exploration_final_eps=0.04,
             policy_kwargs=dict(net_arch=[8] * 2),
-            gamma=0.8, tau=0.1, learning_rate=0.0005,
+            gamma=0.8, tau=0.1, learning_rate=0.0006,
             target_update_interval=100, train_freq=3)
 
         metric_avg[i], metric_std[i] = evaluate_performance(
             scan_params=scan_params,
-            n_steps_train=60000, max_steps_per_episode=40,
+            n_steps_train=60000, max_steps_per_episode=30,
             n_evaluations=1, simple_reward=True, make_plots=True)
 
     show_scan_result(scan_values, metric_avg, metric_std, scenario)
