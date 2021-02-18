@@ -50,13 +50,14 @@ def init_agent(env: TargetSteeringEnv, scan_params: dict = None) -> DQN:
 
 
 def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
-                         n_episodes_test: int = 1000,
+                         n_episodes_test: int = 200,
                          max_steps_per_episode: int = 20,
                          scan_params: dict = None, make_plots: bool = False,
-                         simple_reward: bool = True) -> (np.ndarray, np.ndarray):
+                         simple_reward: bool = True) \
+        -> (np.ndarray, np.ndarray):
     """ Evaluate performance of agent for the scan params and return
     np.arrays containing the average and standard deviation of the two
-    metrics defined in helpers.calculate_performance_metrics(..).
+    metrics defined in helpers.calculate_performance_metric(..).
     :param n_evaluations: number of full from-scratch-trainings of the agent
     :param n_steps_train: number of training steps per evaluation
     :param n_episodes_test: number of episodes to evaluate performance
@@ -65,11 +66,11 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
     :param make_plots: flag to decide whether to show plots or not
     :param simple_reward: flag to set simple (discrete) or continuous reward
     scheme
-    :return: average and std. dev of both performance metrics. """
+    :return: average and std. dev of both performance metric. """
     if scan_params is None:
         print('Running performance test with default parameters')
 
-    metrics = np.zeros((2, n_evaluations))
+    metric = np.zeros(n_evaluations)
     tqdm_pbar = tqdm(range(n_evaluations), ncols=80, position=0,
                      desc='Evaluations: ', leave=False)
     for j in tqdm_pbar:
@@ -107,22 +108,22 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
                 max_steps_per_episode=max_steps_per_episode)
             hlp.plot_q_net_response(env, agent, 'Q-net response, trained agent')
 
-        # Calculate performance metrics
-        metrics[:, j] = hlp.calculate_performance_metrics(test_env)
+        # Calculate performance metric
+        metric[j] = hlp.calculate_performance_metric(test_env)
 
-    metrics_avg = np.mean(metrics, axis=1)
-    metrics_std = np.std(metrics, axis=1) / np.sqrt(n_evaluations)
+    metric_avg = np.mean(metric)
+    metric_std = np.std(metric) / np.sqrt(n_evaluations)
 
-    return metrics_avg, metrics_std
+    return metric_avg, metric_std
 
 
-def show_scan_result(scan_values: np.ndarray, metrics_avg: np.ndarray,
-                     metrics_std: np.ndarray, scenario: str):
+def show_scan_result(scan_values: np.ndarray, metric_avg: np.ndarray,
+                     metric_std: np.ndarray, scenario: str):
     """
     Plot the success metric for the scanned values.
     :param scan_values: values of the scan parameters
-    :param metrics_avg: performance metrics, mean over all evaluations
-    :param metrics_std: performance metrics, std. dev. over all evaluations
+    :param metric_avg: performance metric, mean over all evaluations
+    :param metric_std: performance metric, std. dev. over all evaluations
     :param scenario: name of the scan scenario, will be used as x-label
     :return: None
     """
@@ -130,7 +131,7 @@ def show_scan_result(scan_values: np.ndarray, metrics_avg: np.ndarray,
     fig.suptitle('Performance evaluation')
     ax1 = plt.gca()
     (h, caps, _) = ax1.errorbar(
-        x=scan_values, y=metrics_avg[0, :], yerr=metrics_std[0, :],
+        x=scan_values, y=metric_avg, yerr=metric_std,
         c='tab:red', capsize=4, elinewidth=2)
 
     for cap in caps:
@@ -163,8 +164,8 @@ if __name__ == "__main__":
     scan_values = scan_scenarios[scenario]
 
     # Run the scan (adapt the correct kwarg)
-    metrics_avg = np.zeros((2, len(scan_values)))
-    metrics_std = np.zeros((2, len(scan_values)))
+    metric_avg = np.zeros(len(scan_values))
+    metric_std = np.zeros(len(scan_values))
 
     tqdm_scan_values = tqdm(scan_values, ncols=80, position=1, desc='Total: ')
     for i, val in enumerate(tqdm_scan_values):
@@ -174,9 +175,9 @@ if __name__ == "__main__":
             gamma=0.8, tau=0.1, learning_rate=0.0005,
             target_update_interval=100, train_freq=3)
 
-        metrics_avg[:, i], metrics_std[:, i] = evaluate_performance(
+        metric_avg[i], metric_std[i] = evaluate_performance(
             scan_params=scan_params,
             n_steps_train=60000, max_steps_per_episode=40,
             n_evaluations=1, simple_reward=True, make_plots=True)
 
-    show_scan_result(scan_values, metrics_avg, metrics_std, scenario)
+    show_scan_result(scan_values, metric_avg, metric_std, scenario)
