@@ -368,11 +368,13 @@ def plot_agent_evaluation(
     Plot the evaluation of the agent after training.
     """
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(6, 7))
+    fig.suptitle('QBM agent evaluation')
 
     # Value functions
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
-        axs[0].plot(1e3 * states_q, q_values[:, i], c=cols[i], label=f'Action {i}')
+        axs[0].plot(1e3 * states_q, q_values[:, i], c=cols[i],
+                    label=f'Action {i}')
 
     # MC agent results
     axs[0].plot(1e3 * states_v, v_star_values, c='k', label='V* (MC)')
@@ -465,8 +467,8 @@ def train_and_evaluate_agent(
 
 if __name__ == "__main__":
 
-    run_type = '1d_scan'
-    n_repeats_scan = 5  # How many times to run the same parameters in scans
+    run_type = '2d_scan'
+    n_repeats_scan = 3  # How many times to run the same parameters in scans
 
     # Environment settings
     kwargs_env = {
@@ -478,7 +480,7 @@ if __name__ == "__main__":
 
     # RL settings
     kwargs_rl = {
-        'learning_rate': (2e-2, 8e-4),
+        'learning_rate': (2e-2, 5e-4),
         'small_gamma': 0.8,
         'exploration_epsilon': (1.0, 0.04),
         'exploration_fraction': 0.6
@@ -489,14 +491,14 @@ if __name__ == "__main__":
     kwargs_anneal = {
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
         'n_replicas': 25,  # 25
-        'n_meas_for_average': 10,  # 150
+        'n_meas_for_average': 20,  # 150
         'n_annealing_steps': 100,  # 300
         'big_gamma': (20., 0.5),
         'beta': 1.
     }
 
     # Training time steps
-    total_timesteps = 20  # 500
+    total_timesteps = 1000  # 500
 
     if run_type == 'single':
         make_plots = True
@@ -511,7 +513,10 @@ if __name__ == "__main__":
         lr_arr = np.array([2e-2, 8e-3, 5e-3, 2e-3])
         results = np.zeros((n_repeats_scan, len(lr_arr)))
 
+        tot_n_scans = len(lr_arr)
         for k, lr in enumerate(lr_arr):
+            print(f'Param. scan nb.: {k + 1}/{tot_n_scans}')
+
             kwargs_rl.update({'learning_rate': (lr, 8e-4)})
             for m in range(n_repeats_scan):
                 results[m, k] = train_and_evaluate_agent(
@@ -543,11 +548,13 @@ if __name__ == "__main__":
         beta_arr = np.array([1., 2., 3.])
         results = np.zeros((n_repeats_scan, len(big_gamma_f_arr), len(beta_arr)))
 
+        tot_n_scans = len(beta_arr) * len(big_gamma_f_arr)
         for k, bg_f in enumerate(big_gamma_f_arr):
             for l, beta in enumerate(beta_arr):
+                print(f'Param. scan nb.: {k+l+1}/{tot_n_scans}')
                 for m in range(n_repeats_scan):
-                    kwargs_anneal.update({'big_gamma': (20., bg_f),
-                                          'beta': beta})
+                    kwargs_anneal.update(
+                        {'big_gamma': (20., bg_f), 'beta': beta})
 
                     results[m, k, l] = train_and_evaluate_agent(
                         kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,

@@ -149,14 +149,6 @@ class TargetSteeringEnv(gym.Env):
         self.state = x_new_binary
         self.mssb_angle = total_angle
 
-        if self.debug:
-            x_new_discrete = self._make_state_discrete(x_new)
-            print('x_new', x_new)
-            print('x_new_discrete', x_new_discrete)
-            print('x_new_binary', x_new_binary)
-            print('x_new_binary_float',
-                  self.make_binary_state_float(x_new_binary))
-
         self.step_count += 1
 
         # Is episode done?
@@ -180,11 +172,7 @@ class TargetSteeringEnv(gym.Env):
             pass
 
         if self.simple_reward:
-            # Reward: give only positive reward when episode is solved
-            if done_reason == 1:
-                reward = 100.
-            else:
-                reward = 0.
+            reward = self.simplify_reward(reward)
 
         # Log history
         self.logger.log_episode.append(
@@ -255,6 +243,19 @@ class TargetSteeringEnv(gym.Env):
 
         reward = self.intensity_on_target[0]
 
+        return reward
+
+    def simplify_reward(self, reward: float) -> float:
+        """
+        Simplify, i.e. discretize the reward. Give only positive reward when
+        episode is solved
+        :param reward: input reward
+        :return discretized simplified reward
+        """
+        if reward > self.reward_threshold:
+            reward = 100.
+        else:
+            reward = 0.
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:

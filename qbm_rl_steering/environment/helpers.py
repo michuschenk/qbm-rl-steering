@@ -16,6 +16,12 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     :param fig_title: figure title """
     angles, x_bpm, rewards = env.get_response()
 
+    if env.simple_reward:
+        simple_reward = []
+        for r in rewards:
+            simple_reward.append(env.simplify_reward(r))
+        rewards = np.array(simple_reward)
+
     fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
 
@@ -51,6 +57,12 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     agent's brain...) versus the state and action axis.
     """
     angles, x_bpm, rewards = env.get_response()
+    if env.simple_reward:
+        simple_reward = []
+        for r in rewards:
+            simple_reward.append(env.simplify_reward(r))
+        rewards = np.array(simple_reward)
+
     states_float, states_binary = env.get_all_states()
 
     # Convert to Torch tensor, and run it through the q-net
@@ -116,7 +128,7 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
     axs[1].plot(data['action'])
     axs[2].plot(data['reward'])
     axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
-    axs[2].axhline(env.get_max_reward(), c='k', ls='-', label='Max. reward')
+    # axs[2].axhline(env.get_max_reward(), c='k', ls='-', label='Max. reward')
 
     for i in range(3):
         for j in n_steps:
@@ -167,7 +179,7 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_final'],
                 c='tab:red', label='Final')
     axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
-    axs[2].axhline(env.get_max_reward(), c='k', label='Max. reward')
+    # axs[2].axhline(env.get_max_reward(), c='k', label='Max. reward')
     axs[2].set_ylim(-1.05, 1.05)
 
     axs[0].set_ylabel('Abort reason')
