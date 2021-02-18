@@ -181,10 +181,10 @@ class TargetSteeringEnv(gym.Env):
 
         if self.simple_reward:
             # Reward: give only positive reward when episode is solved
-            if reward > self.reward_threshold:
+            if done_reason == 1:
                 reward = 100.
             else:
-                reward = -1.
+                reward = 0.
 
         # Log history
         self.logger.log_episode.append(
@@ -194,18 +194,29 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state, reward, done, {}
 
-    def reset(self, init_mssb_angle: float = None) -> np.ndarray:
+    def reset(self, init_state: float = None) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta, get the initial state, and reset logger. This method
         gets called e.g. at the end of an episode.
         :return an initial state """
-        if init_mssb_angle is None:
+        if init_state is None:
             # Initialize mssb_angle within self.mssb_angle_min and
             # self.mssb_angle_max
             self.mssb_angle = np.random.uniform(
-                low=self.mssb_angle_min, high=self.mssb_angle_max, size=1)[0]
+                low=self.mssb_angle_min, high=self.mssb_angle_max)
         else:
-            self.mssb_angle = init_mssb_angle
+            # If init_state is set, we have to calc. the mssb_angle that puts
+            # env in that state (that's a bit messy ...)
+            # TODO: this needs major cleanup
+            n_points = 1000
+            x_pos_array = np.zeros(n_points)
+            mssb_array = np.linspace(
+                    self.mssb_angle_min-self.mssb_delta,
+                    self.mssb_angle_max+self.mssb_delta, n_points)
+            for i, mssb in enumerate(mssb_array):
+                x_pos_array[i], _ = self.get_pos_at_bpm_target(mssb)
+            idx = np.argmin(np.abs(init_state - x_pos_array))
+            self.mssb_angle = mssb_array[idx]
 
         x_init, _ = self.get_pos_at_bpm_target(self.mssb_angle)
 
@@ -339,15 +350,15 @@ class TargetSteeringEnv(gym.Env):
         """
         Return a list of all the possible states that the system can be in
         in binary encoded form. This is only considering the actual range
-        that does not lead to an episode abort.
+        that we can reach with dipole angles in [mssb_angle_min,
+        mssb_angle_max].
         :return tuple of np array and List of all possible states in float
         and binary form {-1, 1} resp.
         """
         # Allowed range of states (float)
         states_float = np.arange(
-            self.x_min - self.x_margin_abort_episode,
-            self.x_max + self.x_margin_abort_episode +
-            self.observation_bin_width / 2.,
+            self.x_min,
+            self.x_max + self.observation_bin_width / 2.,
             self.observation_bin_width)
 
         # Convert to binary vectors
