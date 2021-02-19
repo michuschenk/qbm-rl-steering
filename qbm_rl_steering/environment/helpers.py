@@ -16,12 +16,6 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     :param fig_title: figure title """
     angles, x_bpm, intensities = env.get_response()
 
-    if env.simple_reward:
-        simple_reward = []
-        for r in intensities:
-            simple_reward.append(env.simplify_reward(r))
-        intensities = np.array(simple_reward)
-
     fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
 
@@ -58,6 +52,9 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     agent's brain...) versus the state and action axis.
     """
     angles, x_bpm, intensities = env.get_response()
+    idx = np.where(intensities > env.reward_threshold)[0][-1]
+    x_reward_thresh = x_bpm[idx]
+
     if env.simple_reward:
         simple_rewards = []
         for r in intensities:
@@ -74,25 +71,32 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     fig.suptitle(fig_title)
 
     l1, = axs[0].plot(1e3*x_bpm, intensities, c='k')
-    ax11 = axs[0].twinx()
-    l11, = ax11.plot(1e3*x_bpm, simple_rewards, c='forestgreen')
-
     l12 = axs[0].axhline(env.reward_threshold, c='k', ls='--')
-    axs[0].legend((l1, l12, l11),
-               ('Integrated intensity', 'Target intensity', 'Reward'),
-               loc='lower left', fontsize=10)
+    handles = [l1, l12]
+    labels = ['Integrated intensity', 'Target ']
 
+    if env.simple_reward:
+        ax11 = axs[0].twinx()
+        l11, = ax11.plot(1e3*x_bpm, simple_rewards, c='forestgreen')
+        ax11.set_ylabel('Reward')
+
+        labels[0] = 'Integrated intensity / reward'
+        handles.append(l11)
+        labels.append('Reward')
+
+    axs[0].legend(handles, labels, loc='lower left', fontsize=10)
     axs[0].set_ylabel('Integrated intensity')
-    ax11.set_ylabel('Reward')
 
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
         axs[1].plot(1e3*states_float, q_values[:, i], c=cols[i],
                     label=f'Action {i}')
+    axs[1].axvline(1e3*x_reward_thresh, ls='--', color='k')
+    axs[1].axvline(-1e3*x_reward_thresh, ls='--', color='k')
 
     # Run Monte Carlo to get V* values
     mc_agent = MonteCarloAgent(env, gamma=agent.gamma)
-    states, v_star = mc_agent.run_mc(n_iterations=200)
+    states, v_star = mc_agent.run_mc(n_iterations=5000)
 
     axs[1].plot(1e3*states, v_star, c='k', label='V* (MC)')
     axs[1].legend(loc='upper right', fontsize=10)
@@ -188,9 +192,9 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     # Y-axis scaling
     rew_min = np.min(
         (episodic_data['reward_final'], episodic_data['reward_initial']))
-    rew_min = min(rew_min, -5)
     rew_max = np.max(
         (episodic_data['reward_final'], episodic_data['reward_initial']))
+    rew_min = min(rew_min, -0.05 * (rew_max - rew_min))
     axs[2].set_ylim(1.05*rew_min, 1.05*rew_max)
 
     axs[0].set_ylabel('Abort reason')
