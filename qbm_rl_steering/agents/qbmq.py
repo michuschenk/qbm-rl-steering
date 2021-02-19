@@ -5,6 +5,7 @@ from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 import matplotlib.pyplot as plt
 import numpy as np
+import dill
 import random
 import math
 import tqdm
@@ -15,7 +16,6 @@ from typing import Tuple, List, Dict
 # TODO: implement double Q
 # TODO: implement replay buffer
 # TODO: parallel agents
-# TODO: implement save and load weights
 
 
 class QBMQN(object):
@@ -396,14 +396,16 @@ def plot_agent_evaluation(
     plt.show()
 
 
-def calculate_policy_goodness(env: TargetSteeringEnv, states: np.ndarray,
-                              best_action: np.ndarray) -> np.ndarray:
+def calculate_policy_optimality(env: TargetSteeringEnv, states: np.ndarray,
+                                best_action: np.ndarray) \
+        -> Tuple[QBMQN, np.ndarray]:
     """
-    Metric for goodness of policy: we can do this because we know the
+    Metric for optimality of policy: we can do this because we know the
     optimal policy already. Measure how many of the actions are correct
     according to the Q-functions that we learned. We only judge actions
     for states outside of reward threshold (inside episode is anyway over
     after 1 step and agent has no way to learn what's best there.
+    :return the agent object and the performance metric
     """
     _, x, r = env.get_response()
     idx = np.where(r > env.reward_threshold)[0][-1]
@@ -420,7 +422,7 @@ def calculate_policy_goodness(env: TargetSteeringEnv, states: np.ndarray,
         (best_action == 1) & (states > x_reward_thresh))
 
     policy_eval = 100 * n_correct_actions / float(n_states_total)
-    print(f'Goodness of policy: {policy_eval:.1f}%')
+    print(f'Optimality of policy: {policy_eval:.1f}%')
     return policy_eval
 
 
@@ -461,29 +463,31 @@ def train_and_evaluate_agent(
             states_q, q_values, best_action, states_v, v_star_values,
             visited_states)
 
-    policy_goodness = calculate_policy_goodness(env, states_q, best_action)
-    return policy_goodness
+    policy_optimality = calculate_policy_optimality(env, states_q, best_action)
+    return agent, policy_optimality
 
 
 if __name__ == "__main__":
 
     run_type = '2d_scan'
-    n_repeats_scan = 3  # How many times to run the same parameters in scans
+    save_agents = True
+    agent_directory = 'trained_agents/'
+    n_repeats_scan = 5  # How many times to run the same parameters in scans
 
     # Environment settings
     kwargs_env = {
         'n_bits_observation_space': 8,
         'n_actions': 2,
         'simple_reward': True,
-        'max_steps_per_episode': 20
+        'max_steps_per_episode': 25
     }
 
     # RL settings
     kwargs_rl = {
-        'learning_rate': (2e-2, 5e-4),
+        'learning_rate': (2e-2, 6e-4),
         'small_gamma': 0.8,
         'exploration_epsilon': (1.0, 0.04),
-        'exploration_fraction': 0.6
+        'exploration_fraction': 0.7
     }
 
     # Graph config and quantum annealing settings
@@ -491,8 +495,8 @@ if __name__ == "__main__":
     kwargs_anneal = {
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
         'n_replicas': 25,  # 25
-        'n_meas_for_average': 20,  # 150
-        'n_annealing_steps': 100,  # 300
+        'n_meas_for_average': 50,  # 150
+        'n_annealing_steps': 100,  # 300, it seems that 100 is best
         'big_gamma': (20., 0.5),
         'beta': 1.
     }
@@ -502,33 +506,45 @@ if __name__ == "__main__":
 
     if run_type == 'single':
         make_plots = True
-        train_and_evaluate_agent(
+        agent, optimality = train_and_evaluate_agent(
             kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
             kwargs_anneal=kwargs_anneal, total_timesteps=total_timesteps,
             make_plots=make_plots)
+        print(f'Optimality {optimality:.2f} %')
+
+        if save_agents:
+            agent_path = agent_directory + 'single_run.pkl'
+            with open(agent_path, 'wb') as fid:
+                dill.dump(agent, fid)
 
     elif run_type == '1d_scan':
         make_plots = False
 
-        lr_arr = np.array([2e-2, 8e-3, 5e-3, 2e-3])
-        results = np.zeros((n_repeats_scan, len(lr_arr)))
+        param_arr = np.array([10, 20, 40, 80, 100, 150])
+        f_name = 'n_meas_for_average_'
+        results = np.zeros((n_repeats_scan, len(param_arr)))
 
-        tot_n_scans = len(lr_arr)
-        for k, lr in enumerate(lr_arr):
+        tot_n_scans = len(param_arr)
+        for k, val in enumerate(param_arr):
             print(f'Param. scan nb.: {k + 1}/{tot_n_scans}')
 
-            kwargs_rl.update({'learning_rate': (lr, 8e-4)})
+            kwargs_anneal.update({'n_meas_for_average': val})
             for m in range(n_repeats_scan):
-                results[m, k] = train_and_evaluate_agent(
+                agent, results[m, k] = train_and_evaluate_agent(
                     kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
                     kwargs_anneal=kwargs_anneal,
                     total_timesteps=total_timesteps,
                     make_plots=make_plots)
 
+                if save_agents:
+                    agent_path = agent_directory + f_name + f'{val}_run_{m}.pkl'
+                    with open(agent_path, 'wb') as fid:
+                        dill.dump(agent, fid)
+
         # Plot scan summary
         plt.figure(1, figsize=(6, 5))
         (h, caps, _) = plt.errorbar(
-            lr_arr, np.mean(results, axis=0),
+            param_arr, np.mean(results, axis=0),
             yerr=np.std(results, axis=0) / np.sqrt(n_repeats_scan),
             capsize=4, elinewidth=2, color='tab:red')
 
@@ -536,43 +552,73 @@ if __name__ == "__main__":
             cap.set_color('tab:red')
             cap.set_markeredgewidth(2)
 
-        plt.xlabel('Initial learning rate')
-        plt.ylabel('Goodness policy (%)')
+        plt.xlabel('n_meas_for_average')
+        plt.ylabel('Optimality (%)')
+        plt.tight_layout()
         plt.show()
 
     else:
         # Assume 2d_scan
         make_plots = False
 
-        big_gamma_f_arr = np.array([0.2, 0.5, 1.])
-        beta_arr = np.array([1., 2., 3.])
-        results = np.zeros((n_repeats_scan, len(big_gamma_f_arr), len(beta_arr)))
+        param_1 = np.array([0.1, 0.2, 0.5, 1.])
+        f_name_1 = f'big_gamma_f_'
+        param_2 = np.array([0.5, 1., 2., 3.])
+        f_name_2 = f'_beta_'
 
-        tot_n_scans = len(beta_arr) * len(big_gamma_f_arr)
-        for k, bg_f in enumerate(big_gamma_f_arr):
-            for l, beta in enumerate(beta_arr):
+        results = np.zeros((n_repeats_scan, len(param_1), len(param_2)))
+
+        tot_n_scans = len(param_1) * len(param_2)
+        for k, val_1 in enumerate(param_1):
+            for l, val_2 in enumerate(param_2):
                 print(f'Param. scan nb.: {k+l+1}/{tot_n_scans}')
                 for m in range(n_repeats_scan):
                     kwargs_anneal.update(
-                        {'big_gamma': (20., bg_f), 'beta': beta})
+                        {'big_gamma': (20., val_1), 'beta': val_2})
 
-                    results[m, k, l] = train_and_evaluate_agent(
+                    agent, results[m, k, l] = train_and_evaluate_agent(
                         kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
                         kwargs_anneal=kwargs_anneal,
                         total_timesteps=total_timesteps,
                         make_plots=make_plots)
 
-        # Plot scan summary
+                    if save_agents:
+                        agent_path = (
+                            agent_directory + f_name_1 + f'{val_1}' +
+                            f_name_2 + f'{val_2}_run_{m}.pkl')
+                        with open(agent_path, 'wb') as fid:
+                            dill.dump(agent, fid)
+
+        # Plot scan summary, mean
         plt.figure(1, figsize=(6, 5))
-        plt.imshow(np.flipud(np.means(results.T, axis=0)))
+        plt.imshow(np.flipud(np.mean(results.T, axis=0)))
         cbar = plt.colorbar()
 
-        plt.xticks(range(len(beta_arr)),
-                   labels=[i for i in beta_arr])
-        plt.yticks(range(len(big_gamma_f_arr)),
-                   labels=[i for i in big_gamma_f_arr[::-1]])
+        plt.xticks(range(len(param_2)),
+                   labels=[i for i in param_2])
+        plt.yticks(range(len(param_1)),
+                   labels=[i for i in param_1[::-1]])
 
         plt.xlabel('beta')
         plt.ylabel('big_gamma_f')
-        cbar.set_label('Goodness policy (%)')
+        cbar.set_label('Mean optimality (%)')
+        plt.tight_layout()
+        plt.savefig('mean_res.png', dpi=300)
+        plt.show()
+
+        # Plot scan summary, std
+        plt.figure(2, figsize=(6, 5))
+        plt.imshow(np.flipud(np.std(results.T, axis=0)/np.sqrt(n_repeats_scan)))
+        cbar = plt.colorbar()
+
+        plt.xticks(range(len(param_2)),
+                   labels=[i for i in param_2])
+        plt.yticks(range(len(param_1)),
+                   labels=[i for i in param_1[::-1]])
+
+        plt.xlabel('beta')
+        plt.ylabel('big_gamma_f')
+        cbar.set_label('Std. optimality (%)')
+        plt.tight_layout()
+        plt.savefig('std_res.png', dpi=300)
         plt.show()
