@@ -469,10 +469,10 @@ def train_and_evaluate_agent(
 
 if __name__ == "__main__":
 
-    run_type = '2d_scan'
-    save_agents = True
+    run_type = 'single'
+    save_agents = False
     agent_directory = 'trained_agents/'
-    n_repeats_scan = 5  # How many times to run the same parameters in scans
+    n_repeats_scan = 10  # How many times to run the same parameters in scans
 
     # Environment settings
     kwargs_env = {
@@ -495,10 +495,10 @@ if __name__ == "__main__":
     kwargs_anneal = {
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
         'n_replicas': 25,  # 25
-        'n_meas_for_average': 50,  # 150
+        'n_meas_for_average': 20,  # 150
         'n_annealing_steps': 100,  # 300, it seems that 100 is best
         'big_gamma': (20., 0.5),
-        'beta': 1.
+        'beta': 0.5
     }
 
     # Training time steps
@@ -591,7 +591,7 @@ if __name__ == "__main__":
 
         # Plot scan summary, mean
         plt.figure(1, figsize=(6, 5))
-        plt.imshow(np.flipud(np.mean(results.T, axis=0)))
+        plt.imshow(np.flipud(np.mean(results, axis=0).T))
         cbar = plt.colorbar()
 
         plt.xticks(range(len(param_2)),
@@ -608,7 +608,7 @@ if __name__ == "__main__":
 
         # Plot scan summary, std
         plt.figure(2, figsize=(6, 5))
-        plt.imshow(np.flipud(np.std(results.T, axis=0)/np.sqrt(n_repeats_scan)))
+        plt.imshow(np.flipud(np.std(results, axis=0).T/np.sqrt(n_repeats_scan)))
         cbar = plt.colorbar()
 
         plt.xticks(range(len(param_2)),
