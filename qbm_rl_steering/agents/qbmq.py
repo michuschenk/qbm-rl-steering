@@ -20,6 +20,7 @@ from typing import Tuple, List, Dict
 
 class QBMQN(object):
     def __init__(self, env: TargetSteeringEnv,
+                 annealer_type: str,
                  n_graph_nodes: int,
                  n_replicas: int,
                  n_meas_for_average: int,
@@ -35,6 +36,9 @@ class QBMQN(object):
         Implementation of the QBM-RL Q-learning agent, following the paper:
         https://arxiv.org/pdf/1706.00074.pdf
         :param env: OpenAI gym environment
+        :param annealer_type: Choose your annealear, either 'SA' or 'SQA'.
+        Make sure you match the requirements in terms of beta and big_gamma
+        when picking one of the two.
         :param n_graph_nodes: number of nodes of the graph structure. E.g. for
         2 unit cells of the DWAVE-2000 chip, it's 16 nodes (8 per unit).
         :param n_replicas: number of replicas in the 3D extension of the Ising
@@ -81,6 +85,7 @@ class QBMQN(object):
         self.possible_actions = [
             act for act in range(self.env.action_space.n)]
         self.q_function = utl.QFunction(
+            annealer_type=annealer_type,
             n_bits_observation_space=n_bits_observation_space,
             n_bits_action_space=n_bits_action_space,
             small_gamma=small_gamma,
@@ -469,7 +474,7 @@ def train_and_evaluate_agent(
 
 if __name__ == "__main__":
 
-    run_type = '1d_scan'
+    run_type = 'single'
     save_agents = False
     agent_directory = 'trained_agents/'
     n_repeats_scan = 10  # How many times to run the same parameters in scans
@@ -493,6 +498,7 @@ if __name__ == "__main__":
     # Graph config and quantum annealing settings
     # Commented values are what's in the paper
     kwargs_anneal = {
+        'annealer_type': 'SQA',
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
         'n_replicas': 15,  # 25
         'n_meas_for_average': 20,  # 150

@@ -1,17 +1,9 @@
 import math
 import random
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 
-# The DWAVE-neal is NOT a quantum annealing simulator (SQA, transverse field
-# decay) in my understanding, but it does simulated annealing (SA, temperature
-# decay)
-from neal import SimulatedAnnealingSampler
-
-# Found instead this library that does SQA
-# import sqaod as sq
-# Can also run on an nvidia GPU (CUDA) => see utils/sqa.py
-from qbm_rl_steering.utils.sqa import SQA
+from qbm_rl_steering.utils.annealers import SQA, SA
 
 
 def get_visible_nodes_array(state: np.ndarray, action: int,
@@ -79,7 +71,7 @@ def create_general_qubo_dict(
 
 def get_average_effective_hamiltonian(
         spin_configurations: np.ndarray, w_hh: Dict, w_vh: Dict,
-        visible_nodes: np.ndarray, big_gamma_final: float, beta: float)\
+        visible_nodes: np.ndarray, big_gamma_final: float, beta_final: float)\
         -> float:
     """
     This method calculates the average effective Hamiltonian as given in
@@ -103,7 +95,7 @@ def get_average_effective_hamiltonian(
     (length: n_bits_observation_space + n_bits_action_space).
     :param big_gamma_final: final, i.e. at the end of the SQA, strength of
     the transverse field (virtual, average value), see paper for details.
-    :param beta: Inverse temperature (note that this parameter is kept
+    :param beta_final: Inverse temperature (note that this parameter is kept
     constant in SQA other than in SA).
     :return: single float; effective Hamiltonian averaged over the individual
     measurements.
@@ -113,7 +105,8 @@ def get_average_effective_hamiltonian(
     # FIRST TERM, sum over h, h' in Eq. (9)
     h_sum_1 = 0.
     for (h, h_prime), w in w_hh.items():
-        h_sum_1 += w * spin_configurations[:, :, h] * spin_configurations[:, :, h_prime]
+        h_sum_1 += w * (spin_configurations[:, :, h] *
+                        spin_configurations[:, :, h_prime])
 
     # SECOND term, sum over v, h in Eq. (9)
     h_sum_2 = 0.
@@ -127,16 +120,19 @@ def get_average_effective_hamiltonian(
 
     # THIRD term, [-w_plus * (sum_hk_hkplus1 + sum_h1_hr)], in Eq. (9)
     # h_sum_3 has shape (n_meas_for_average,)
-    x = big_gamma_final * beta / n_replicas
-    coth_term = math.cosh(x) / math.sinh(x)
-    w_plus = math.log10(coth_term) / (2. * beta)
+    if big_gamma_final == 0:
+        # This is to remove the w_plus term in case we use classical SA.
+        coth_term = 1.
+    else:
+        x = big_gamma_final * beta_final / n_replicas
+        coth_term = math.cosh(x) / math.sinh(x)
+    w_plus = math.log10(coth_term) / (2. * beta_final)
 
     # I think there is a typo in Eq. (9). The summation index in w+(.. + ..)
     # of the first term should only go from k=1 to r-1.
     hk_hkplus1_sum = np.sum(np.sum(
         spin_configurations[:, :-1, :] * spin_configurations[:, 1:, :],
-        axis=1),
-        axis=-1)
+        axis=1), axis=-1)
     h1_hr_sum = np.sum(
         spin_configurations[:, -1, :] * spin_configurations[:, 0, :],
         axis=-1)
@@ -147,7 +143,7 @@ def get_average_effective_hamiltonian(
 
 
 def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
-                    beta: float) -> float:
+                    beta_final: float) -> float:
     """
     We count the number of unique spin configurations on the 3D extended
     Ising model (torus), i.e. on the n_replicas * n_hidden_nodes nodes and
@@ -160,7 +156,7 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
     replicas, i.e. Trotter slices).
     :param avg_eff_hamiltonian: average effective Hamiltonian according to
     Eq. (9) in paper: https://arxiv.org/pdf/1706.00074.pdf .
-    :param beta: Inverse temperature (note that this parameter is kept
+    :param beta_final: Inverse temperature (note that this parameter is kept
     constant in SQA other than in SA).
     :return: free energy of the QBM defined according to the paper.
     """
@@ -171,18 +167,21 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
     mean_n_occurrences = n_occurrences / float(np.sum(n_occurrences))
     a_sum = np.sum(mean_n_occurrences * np.log10(mean_n_occurrences))
 
-    return avg_eff_hamiltonian + a_sum / beta
+    return avg_eff_hamiltonian + a_sum / beta_final
 
 
 class QFunction(object):
-    def __init__(self, n_bits_observation_space: int,
+    def __init__(self, annealer_type: str, n_bits_observation_space: int,
                  n_bits_action_space: int, small_gamma: float,
                  n_graph_nodes: int, n_replicas: int,
-                 big_gamma: Tuple[float, float], beta: float,
+                 big_gamma: Union[Tuple[float, float], float],
+                 beta: Union[float, Tuple[float, float]],
                  n_annealing_steps: int, n_meas_for_average: int) -> None:
         """
         Implementation of the Q function (state-action value function) using
         an SQA method to update / train.
+        :param annealer_type: choose between simulated quantum annealing (SQA)
+        or classical annealing (SA) (use big_gamma = 0 with SA).
         :param n_bits_observation_space: number of bits used to encode
         observation space of environment
         :param n_bits_action_space: number of bits required to encode the
@@ -195,17 +194,31 @@ class QFunction(object):
         extension of the Ising model, see Fig. 1 in paper:
         https://arxiv.org/pdf/1706.00074.pdf
         :param big_gamma: Transverse field; first entry is initial gamma and
-        second entry is final gamma at end of annealing process.
-        :param beta: Inverse temperature (note that this parameter is kept
-        constant in SQA other than in SA).
+        second entry is final gamma at end of annealing process (when using
+        SQA). When annealer_type is SA, set big_gamma = 0.
+        :param beta: Inverse temperature, either a float (for SQA),
+        or a tuple of floats (for SA). For SQA, the temperature is kept
+        constant.
         :param n_meas_for_average: number of times we run an independent
         annealing process from start to end
         :param n_annealing_steps: number of steps that one annealing
         process should take (~annealing time).
         """
-        self.sqa = SQA(big_gamma, beta, n_replicas, n_nodes=n_graph_nodes)
+        if annealer_type == 'SQA':
+            self.annealer = SQA(
+                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
+                n_nodes=n_graph_nodes)
+        elif annealer_type == 'SA':
+            self.annealer = SA(
+                beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes)
+        else:
+            raise ValueError("Annealer_type must be either 'SQA' or 'SA'.")
+
+        self.annealer_type = annealer_type
+
         self.n_annealing_steps = n_annealing_steps
         self.n_meas_for_average = n_meas_for_average
+        self.n_replicas = n_replicas
 
         self.small_gamma = small_gamma
 
@@ -289,8 +302,8 @@ class QFunction(object):
         qubo_dict = create_general_qubo_dict(
             self.w_hh, self.w_vh, visible_nodes)
 
-        # Run SQA to get spin configurations
-        spin_configurations = self.sqa.anneal(
+        # Run the annealing process (will be either SA or SQA)
+        spin_configurations = self.annealer.anneal(
             qubo_dict=qubo_dict,
             n_meas_for_average=self.n_meas_for_average,
             n_steps=self.n_annealing_steps)
@@ -298,10 +311,10 @@ class QFunction(object):
         # Based on sampled spin configurations calculate free energy
         avg_eff_hamiltonian = get_average_effective_hamiltonian(
             spin_configurations, self.w_hh, self.w_vh, visible_nodes,
-            self.sqa.big_gamma_final, self.sqa.beta)
+            self.annealer.big_gamma_final, self.annealer.beta_final)
 
         free_energy = get_free_energy(
-            spin_configurations, avg_eff_hamiltonian, self.sqa.beta)
+            spin_configurations, avg_eff_hamiltonian, self.annealer.beta_final)
         q_value = -free_energy
 
         return q_value, spin_configurations, visible_nodes
@@ -342,49 +355,3 @@ class QFunction(object):
             self.w_hh[(h, h_prime)] += update_factor * np.mean(
                 spin_configurations[:, :, h] *
                 spin_configurations[:, :, h_prime])
-
-
-# OLD / NO LONGER IN USE
-def dwave_anneal(
-        qubo_dict: Dict, n_meas_for_average: int, n_replicas: int,
-        beta: Tuple[float, float]) -> np.ndarray:
-    """
-    I THINK THIS IS JUST SIMULATED ANNEALING (SA), NOT SIMULATED QUANTUM
-    ANNEALING (SQA). WE NEED THE LATTER.
-    Run the AnnealingSampler with the DWAVE QUBO method and generate all the
-    samples (= spin configurations at hidden nodes of Chimera graph,
-    with values {-1, +1}). The DWAVE sample() method provides samples in a
-    list of dictionaries. Each dictionary corresponds to 1 sample. The
-    dictionary keys are the indices of the hidden nodes [0, 1,..., 15],
-    and the values are the corresponding spins {0, 1}. We will work with {-1, 1}
-    rather than {0, 1}, so we remap all the sampled spin configurations. We
-    also turn the list of dictionaries into a 3D numpy array.
-    :param qubo_dict: Dictionary of coupling weights that corresponds to an
-    upper triangular matrix, where the self-couplings (linear coefficients)
-    are on the diagonal and the quadratic coefficients are on the off-diagonal.
-    :param n_meas_for_average: number of 'independent measurements' that will
-    then be used to calculate the average effective Hamiltonian.
-    :param n_replicas: number of replicas in the 3D extension of the Ising
-    model, see Fig. 1 in paper: https://arxiv.org/pdf/1706.00074.pdf .
-    :param beta: hyperparameter; inverse temperature used for simulated
-    annealing, from start to end, according to linear (or geometric)
-    schedule, see paper for details.
-    :return: 3D numpy array of all the samples. axis 0 is the index of the
-    'independent measurement' for averaging the effective Hamiltonian,
-    axis 1 is index k (replicas), and axis 2 is the index of the hidden nodes.
-    """
-    # TODO: Is it OK to treat replicas in the same way as the 'independent
-    #  measurements' (for avg.) that we do?
-    num_reads = n_meas_for_average * n_replicas
-    spin_configurations = list(SimulatedAnnealingSampler().sample_qubo(
-        Q=qubo_dict, num_reads=num_reads,
-        beta_schedule_type='linear', beta_range=beta).samples())
-
-    # TODO: why do we shuffle them?
-    random.shuffle(spin_configurations)
-    spin_configurations = np.array([
-        list(s.values()) for s in spin_configurations])
-    spin_configurations[spin_configurations == 0] = -1
-    spin_configurations = spin_configurations.reshape((n_meas_for_average,
-                                                       n_replicas, -1))
-    return spin_configurations
