@@ -14,13 +14,13 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     reward vs. dipole kick angle.
     :param env: OpenAI gym-based environment of transfer line
     :param fig_title: figure title """
-    angles, x_bpm, rewards = env.get_response()
+    angles, x_bpm, intensities = env.get_response()
 
     if env.simple_reward:
         simple_reward = []
-        for r in rewards:
+        for r in intensities:
             simple_reward.append(env.simplify_reward(r))
-        rewards = np.array(simple_reward)
+        intensities = np.array(simple_reward)
 
     fig, ax1 = plt.subplots(1, 1, sharex=True, figsize=(6, 5))
     fig.suptitle(fig_title)
@@ -36,15 +36,16 @@ def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:
     l12 = ax1.axhline(1e3 * (env.x_max + env.x_margin_discretization),
                       color='black')
 
-    # Reward response
+    # Intensity response
     ax2 = ax1.twinx()
-    l2, = ax2.plot(1e6*angles, rewards, c='tab:red')
+    l2, = ax2.plot(1e6*angles, intensities, c='k')
 
     ax1.set_xlabel('MSSB angle (urad)')
     ax1.set_ylabel('BPM pos. (mm)')
-    ax2.set_ylabel('Reward')
+    ax2.set_ylabel('Integrated intensity')
     plt.legend((l1, l11, l12, l2),
-               ('BPM pos.', 'Episode abort', 'Discretisation', 'Reward'),
+               ('BPM pos.', 'Episode abort', 'Discretisation',
+                'Integrated intensity'),
                loc='upper left', fontsize=10)
     plt.tight_layout()
     plt.show()
@@ -56,12 +57,12 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     The idea is to plot the Q-net of the agent (to look inside the
     agent's brain...) versus the state and action axis.
     """
-    angles, x_bpm, rewards = env.get_response()
+    angles, x_bpm, intensities = env.get_response()
     if env.simple_reward:
-        simple_reward = []
-        for r in rewards:
-            simple_reward.append(env.simplify_reward(r))
-        rewards = np.array(simple_reward)
+        simple_rewards = []
+        for r in intensities:
+            simple_rewards.append(env.simplify_reward(r))
+        simple_rewards = np.array(simple_rewards)
 
     states_float, states_binary = env.get_all_states()
 
@@ -72,13 +73,17 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6, 6))
     fig.suptitle(fig_title)
 
-    axs[0].plot(1e3*x_bpm, rewards, c='forestgreen')
-    axs[0].axhline(env.reward_threshold, c='k', ls='--',
-                   label='Target reward')
-    axs[0].axhline(env.get_max_reward(), c='k', ls='-',
-                   label='Max. reward')
-    axs[0].legend(loc='upper right')
-    axs[0].set_ylabel('Reward')
+    l1, = axs[0].plot(1e3*x_bpm, intensities, c='k')
+    ax11 = axs[0].twinx()
+    l11, = ax11.plot(1e3*x_bpm, simple_rewards, c='forestgreen')
+
+    l12 = axs[0].axhline(env.reward_threshold, c='k', ls='--')
+    axs[0].legend((l1, l12, l11),
+               ('Integrated intensity', 'Target intensity', 'Reward'),
+               loc='lower left', fontsize=10)
+
+    axs[0].set_ylabel('Integrated intensity')
+    ax11.set_ylabel('Reward')
 
     cols = ['tab:red', 'tab:blue']
     for i in range(q_values.shape[1]):
@@ -90,7 +95,7 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     states, v_star = mc_agent.run_mc(n_iterations=200)
 
     axs[1].plot(1e3*states, v_star, c='k', label='V* (MC)')
-    axs[1].legend(loc='lower right')
+    axs[1].legend(loc='upper right', fontsize=10)
     axs[1].set_ylabel('Q value')
     axs[1].set_xlabel('State, BPM pos. (mm)')
     plt.show()
@@ -175,12 +180,18 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
 
     # Reward
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_initial'],
-                'tab:green', label='Initial')
+                'tab:red', ls='None', marker='o', ms=4, label='Initial')
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_final'],
-                c='tab:red', label='Final')
-    axs[2].axhline(env.reward_threshold, c='k', ls='--', label='Target reward')
-    # axs[2].axhline(env.get_max_reward(), c='k', label='Max. reward')
-    axs[2].set_ylim(-1.05, 1.05)
+                c='tab:green', ls='None', marker='x', ms=4, mew=1,
+                label='Final')
+
+    # Y-axis scaling
+    rew_min = np.min(
+        (episodic_data['reward_final'], episodic_data['reward_initial']))
+    rew_min = min(rew_min, -5)
+    rew_max = np.max(
+        (episodic_data['reward_final'], episodic_data['reward_initial']))
+    axs[2].set_ylim(1.05*rew_min, 1.05*rew_max)
 
     axs[0].set_ylabel('Abort reason')
     axs[1].set_ylabel('# steps per episode')
@@ -221,32 +232,23 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
         plot_log(env, fig_title=fig_title)
 
 
-def calculate_performance_metrics(env: TargetSteeringEnv) -> (float, float):
-    """ Define metric that characterizes performance of the agent
-    Option (I): we count how many times the agent manages to reach the target
-    without going above 'UB optimal behaviour' (i.e. max. number of steps
-    required assuming optimal behaviour).
-    Option (II): Take difference between initial and final reward and
-    divide by number of steps required.
-    I think option (II) gives a bit more detail, but we implement both.
+def calculate_performance_metric(env: TargetSteeringEnv) -> (float, float):
+    """
+    Define metric that characterizes performance of the agent. We count how
+    many times the agent manages to reach the target without going above 'UB
+    optimal behaviour' (i.e. max. number of steps required assuming optimal
+    behaviour).
     :param env: OpenAI gym-based environment of transfer line
-    :return tuple of metrics for option I and II described above. """
+    :return metric value (as a single float)
+    """
     episodic_data = env.logger.extract_episodic_data()
 
-    # Option (I)
     upper_bound_optimal = env.get_max_n_steps_optimal_behaviour()
     msk_steps = episodic_data['episode_length'] <= upper_bound_optimal
     msk_reward = episodic_data['reward_final'] >= env.reward_threshold
     msk_nothing_to_do = episodic_data['episode_length'] == 0
 
+    # How many of the episodes did the agent succeed?
     n_success = np.sum(msk_steps & msk_reward & (~msk_nothing_to_do))
-    metric_1 = n_success / float(np.sum(~msk_nothing_to_do))
 
-    # Option (II)
-    delta_reward = (episodic_data['reward_final'] -
-                    episodic_data['reward_initial'])
-    metric_2 = np.mean(
-        delta_reward[~msk_nothing_to_do] /
-        episodic_data['episode_length'][~msk_nothing_to_do])
-
-    return metric_1, metric_2
+    return n_success / float(np.sum(~msk_nothing_to_do))
