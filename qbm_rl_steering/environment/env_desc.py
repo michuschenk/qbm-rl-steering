@@ -101,7 +101,7 @@ class TargetSteeringEnv(gym.Env):
         # how action is mapped to change of self.mssb_angle.
         if n_actions == 3:
             self.action_space = gym.spaces.Discrete(3)
-            self.action_map = {0: 0, 1: self.mssb_delta, 2: -self.mssb_delta}
+            self.action_map = {0: 0., 1: self.mssb_delta, 2: -self.mssb_delta}
         elif n_actions == 2:
             self.action_space = gym.spaces.Discrete(2)
             self.action_map = {0: self.mssb_delta, 1: -self.mssb_delta}

@@ -87,7 +87,7 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     axs[0].legend(handles, labels, loc='lower left', fontsize=10)
     axs[0].set_ylabel('Integrated intensity')
 
-    cols = ['tab:red', 'tab:blue']
+    cols = ['tab:red', 'tab:blue', 'tab:green']
     for i in range(q_values.shape[1]):
         axs[1].plot(1e3*states_float, q_values[:, i], c=cols[i],
                     label=f'Action {i}')
@@ -95,10 +95,11 @@ def plot_q_net_response(env: TargetSteeringEnv, agent: DQN,
     axs[1].axvline(-1e3*x_reward_thresh, ls='--', color='k')
 
     # Run Monte Carlo to get V* values
-    mc_agent = MonteCarloAgent(env, gamma=agent.gamma)
-    states, v_star = mc_agent.run_mc(n_iterations=5000)
+    if env.action_space.n == 2:
+        mc_agent = MonteCarloAgent(env, gamma=agent.gamma)
+        states, v_star = mc_agent.run_mc(n_iterations=5000)
+        axs[1].plot(1e3*states, v_star, c='k', label='V* (MC)')
 
-    axs[1].plot(1e3*states, v_star, c='k', label='V* (MC)')
     axs[1].legend(loc='upper right', fontsize=10)
     axs[1].set_ylabel('Q value')
     axs[1].set_xlabel('State, BPM pos. (mm)')

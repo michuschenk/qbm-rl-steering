@@ -33,8 +33,8 @@ class MonteCarloAgent:
     def _optimal_policy(self, state: Tuple) -> int:
         """
         Here we define the optimal policy (if known). If state is below pos. 0
-         => go up, i.e. action 0, otherwise take action 1. This is the optimal
-         policy (we know it)
+        => go up, i.e. action 0, otherwise take action 1. This is the optimal
+        policy (we know it)
         :return: the action index under the optimal policy
         """
         state_float = self.env.make_binary_state_float(np.array(state))
