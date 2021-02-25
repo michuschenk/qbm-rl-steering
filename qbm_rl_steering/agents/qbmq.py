@@ -402,8 +402,7 @@ def plot_agent_evaluation(
 
 
 def calculate_policy_optimality(env: TargetSteeringEnv, states: np.ndarray,
-                                best_action: np.ndarray) \
-        -> Tuple[QBMQN, np.ndarray]:
+                                best_action: np.ndarray) -> float:
     """
     Metric for optimality of policy: we can do this because we know the
     optimal policy already. Measure how many of the actions are correct
@@ -433,7 +432,8 @@ def calculate_policy_optimality(env: TargetSteeringEnv, states: np.ndarray,
 
 def train_and_evaluate_agent(
         kwargs_env: Dict, kwargs_rl: Dict, kwargs_anneal: Dict,
-        total_timesteps: int, make_plots: bool = True) -> float:
+        total_timesteps: int, make_plots: bool = True) \
+        -> Tuple[QBMQN, float]:
     """
 
     """
@@ -497,18 +497,28 @@ if __name__ == "__main__":
 
     # Graph config and quantum annealing settings
     # Commented values are what's in the paper
+    # kwargs_anneal = {
+    #     'annealer_type': 'SQA',
+    #     'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
+    #     'n_replicas': 15,  # 25
+    #     'n_meas_for_average': 20,  # 150
+    #     'n_annealing_steps': 100,  # 300, it seems that 100 is best
+    #     'big_gamma': (20., 0.5),
+    #     'beta': 0.5
+    # }
+
     kwargs_anneal = {
-        'annealer_type': 'SQA',
+        'annealer_type': 'SA',
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
-        'n_replicas': 15,  # 25
-        'n_meas_for_average': 20,  # 150
-        'n_annealing_steps': 100,  # 300, it seems that 100 is best
-        'big_gamma': (20., 0.5),
-        'beta': 0.5
+        'n_replicas': 10,
+        'n_meas_for_average': 50,
+        'n_annealing_steps': 100,
+        'big_gamma': 0.,
+        'beta': (20., 0.5)
     }
 
     # Training time steps
-    total_timesteps = 2000  # 500
+    total_timesteps = 20000  # 500
 
     if run_type == 'single':
         make_plots = True
