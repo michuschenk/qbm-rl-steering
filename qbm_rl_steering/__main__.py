@@ -109,7 +109,9 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
             hlp.plot_q_net_response(env, agent, 'Q-net response, trained agent')
 
         # Calculate performance metric
-        metric[j] = hlp.calculate_performance_metric(test_env)
+        metric[j] = hlp.calculate_policy_optimality(
+            env=test_env, agent=test_agent)
+        # metric[j] = hlp.calculate_performance_metric(test_env)
 
     metric_avg = np.mean(metric)
     metric_std = np.std(metric) / np.sqrt(n_evaluations)
@@ -139,8 +141,9 @@ def show_scan_result(scan_values: np.ndarray, metric_avg: np.ndarray,
         cap.set_markeredgewidth(2)
 
     ax1.set_xlabel(scenario)
-    ax1.set_ylabel('Fraction of successes')
-    ax1.set_ylim(-0.05, 1.05)
+    # ax1.set_ylabel('Fraction of successes')
+    ax1.set_ylabel('Optimality (%)')
+    ax1.set_ylim(-5., 105.)
     plt.tight_layout()
     plt.show()
 

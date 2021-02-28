@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch as th
+from typing import Tuple
 
 from stable_baselines3 import DQN
 from tqdm import tqdm
@@ -257,3 +258,52 @@ def calculate_performance_metric(env: TargetSteeringEnv) -> (float, float):
     n_success = np.sum(msk_steps & msk_reward & (~msk_nothing_to_do))
 
     return n_success / float(np.sum(~msk_nothing_to_do))
+
+
+def find_policy_from_q(env: TargetSteeringEnv, agent: DQN) ->\
+        Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get response of the trained "Q-net" for all possible (state, action) and
+    then calculate optimal policy according to learned Q values.
+    """
+    states_float, states_binary = env.get_all_states()
+
+    # Convert to Torch tensor, and run it through the q-net
+    states_binary = th.tensor(states_binary)
+    q_values = agent.q_net(states_binary).detach().numpy()
+
+    best_action = np.ones(len(states_float), dtype=int) * -1
+    for i in range(len(states_float)):
+        best_action[i] = np.argmax(q_values[i, :])
+    return states_float, q_values, best_action
+
+
+def calculate_policy_optimality(env: TargetSteeringEnv, agent: DQN) -> float:
+    """
+    Metric for optimality of policy: we can do this because we know the
+    optimal policy already. Measure how many of the actions are correct
+    according to the Q-functions that we learned. We only judge actions
+    for states outside of reward threshold (inside episode is anyway over
+    after 1 step and agent has no way to learn what's best there.
+    :return the performance metric
+    """
+    states_q, q_values, best_action = find_policy_from_q(env, agent)
+
+    _, x, r = env.get_response()
+    idx = np.where(r > env.reward_threshold)[0][-1]
+    x_reward_thresh = x[idx]
+    n_states_total = np.sum(
+        (states_q < -x_reward_thresh) | (states_q > x_reward_thresh))
+
+    # How many of the actions that the agent would take are actually
+    # according to optimal policy? (this is environment dependent and
+    # something we can do because we know the optimal policy).
+    n_correct_actions = np.sum(
+        (best_action == 0) & (states_q < -x_reward_thresh))
+    n_correct_actions += np.sum(
+        (best_action == 1) & (states_q > x_reward_thresh))
+
+    policy_eval = 100 * n_correct_actions / float(n_states_total)
+    # print(f'Optimality of policy: {policy_eval:.1f}%')
+
+    return policy_eval

@@ -122,7 +122,7 @@ class SQA:
             raise ValueError("When using SQA, specify big_gamma as a tuple to "
                              "implement transverse field decay required for "
                              "annealing.")
-        self.big_gamma_schedule = 'linear'
+        self.big_gamma_schedule = "linear"
         self.big_gamma_init = big_gamma[0]
         self.big_gamma_final = big_gamma[1]
 
@@ -192,11 +192,26 @@ class SQA:
         """
         # Transverse field strength schedule
         if self.big_gamma_schedule == 'linear':
-            big_gamma_step = (
-                    (self.big_gamma_final - self.big_gamma_init) / n_steps)
+            big_gamma_vs_t = np.linspace(
+                self.big_gamma_init, self.big_gamma_final, n_steps)
+        elif self.big_gamma_schedule == 'logarithmic':
+            # gamma(t) = c / log(t + 2) + d
+            const_c = ((self.big_gamma_final - self.big_gamma_init) /
+                       (1./np.log(2+n_steps) - 1./np.log(2)))
+            const_d = self.big_gamma_init - const_c / np.log(2)
+            t = np.arange(n_steps)
+            big_gamma_vs_t = const_d + const_c / (np.log(2 + t))
+        elif self.big_gamma_schedule == 'sqrt':
+            # gamma(t) = c / sqrt(t+1) + d
+            const_c = ((self.big_gamma_final - self.big_gamma_init) /
+                       (1./np.sqrt(1. + n_steps) - 1.))
+            const_d = self.big_gamma_init - const_c
+            t = np.arange(n_steps)
+            big_gamma_vs_t = const_d + const_c / np.sqrt(t + 1.)
         else:
             raise NotImplementedError(
-                "big_gamma_schedule other than linear not implemented.")
+                "big_gamma_schedule other than linear, logarithmic, or sqrt "
+                "not implemented.")
 
         # Set the QUBO matrix
         self._set_qubo_matrix(qubo_dict)
@@ -216,10 +231,9 @@ class SQA:
             self.annealer.prepare()
             self.annealer.randomize_spin()
 
-            big_gamma = self.big_gamma_init
             for j in range(n_steps):
-                self.annealer.anneal_one_step(big_gamma, self.beta_final)
-                big_gamma += big_gamma_step
+                self.annealer.anneal_one_step(
+                    big_gamma_vs_t[j], self.beta_final)
 
             # Get the spin configurations at the end of this annealing run
             # .get_q() returns the spin configurations as np matrix with shape
