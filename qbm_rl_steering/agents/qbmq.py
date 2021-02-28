@@ -1,7 +1,7 @@
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 import qbm_rl_steering.utils.qbmq_utils as utl
 import qbm_rl_steering.environment.helpers as hlp
-from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
+# from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -368,7 +368,7 @@ def find_policy_from_q(agent: QBMQN) -> Tuple[
 def plot_agent_evaluation(
         states_q: np.ndarray, q_values: np.ndarray, best_action: np.ndarray,
         states_v: np.ndarray, v_star_values: np.ndarray,
-        visited_states: np.ndarray) -> None:
+        visited_states: np.ndarray, x_reward_thresh: float) -> None:
     """
     Plot the evaluation of the agent after training.
     """
@@ -380,10 +380,12 @@ def plot_agent_evaluation(
     for i in range(q_values.shape[1]):
         axs[0].plot(1e3 * states_q, q_values[:, i], c=cols[i],
                     label=f'Action {i}')
+    axs[0].axvline(1e3*x_reward_thresh, c='k', ls='--', label='Success region')
+    axs[0].axvline(-1e3*x_reward_thresh, c='k', ls='--')
 
     # MC agent results
-    axs[0].plot(1e3 * states_v, v_star_values, c='k', label='V* (MC)')
-    axs[0].set_ylabel('Q value')
+    # axs[0].plot(1e3 * states_v, v_star_values, c='k', label='V* (MC)')
+    # axs[0].set_ylabel('Q value')
     axs[0].legend(loc='upper right')
 
     # Plot policy
@@ -391,10 +393,14 @@ def plot_agent_evaluation(
         msk_a = best_action == a
         axs[1].plot(1e3 * states_q[msk_a], best_action[msk_a],
                     marker='o', ms=3, ls='None', c=cols[a])
+    axs[1].axvline(1e3*x_reward_thresh, c='k', ls='--')
+    axs[1].axvline(-1e3*x_reward_thresh, c='k', ls='--')
     axs[1].set_ylabel('Best action')
 
     # What states have been visited and how often?
-    axs[2].hist(1e3 * np.array(visited_states), bins=100)
+    axs[2].hist(1e3*np.array(visited_states), bins=100)
+    axs[2].axvline(1e3*x_reward_thresh, c='k', ls='--')
+    axs[2].axvline(-1e3*x_reward_thresh, c='k', ls='--')
     axs[2].set_xlabel('State, BPM pos. (mm)')
     axs[2].set_ylabel('# visits')
 
@@ -449,8 +455,9 @@ def train_and_evaluate_agent(
     # visited_states = agent.learn_systematic(total_timesteps=total_timesteps)
 
     # Run Monte Carlo agent
-    mc_agent = MonteCarloAgent(env, gamma=kwargs_rl['small_gamma'])
-    states_v, v_star_values = mc_agent.run_mc(200)
+    # mc_agent = MonteCarloAgent(env, gamma=kwargs_rl['small_gamma'])
+    # states_v, v_star_values = mc_agent.run_mc(200)
+    states_v, v_star_values = np.zeros(1), np.zeros(1)
 
     # Plot learning evolution (note that this does not work when we either
     # set play_out_episode to True or when using learn_systematic.
@@ -463,10 +470,15 @@ def train_and_evaluate_agent(
     #                    fig_title = 'Agent evaluation')
 
     states_q, q_values, best_action = find_policy_from_q(agent)
+
+    # Get state (x pos.) where reward threshold is
+    _, x, r = env.get_response()
+    idx = np.where(r > env.reward_threshold)[0][-1]
+    x_reward_thresh = x[idx]
     if make_plots:
         plot_agent_evaluation(
             states_q, q_values, best_action, states_v, v_star_values,
-            visited_states)
+            visited_states, x_reward_thresh)
 
     policy_optimality = calculate_policy_optimality(env, states_q, best_action)
     return agent, policy_optimality
@@ -477,7 +489,7 @@ if __name__ == "__main__":
     run_type = 'single'
     save_agents = False
     agent_directory = 'trained_agents/'
-    n_repeats_scan = 10  # How many times to run the same parameters in scans
+    n_repeats_scan = 6  # How many times to run the same parameters in scans
 
     # Environment settings
     kwargs_env = {
@@ -497,28 +509,18 @@ if __name__ == "__main__":
 
     # Graph config and quantum annealing settings
     # Commented values are what's in the paper
-    # kwargs_anneal = {
-    #     'annealer_type': 'SQA',
-    #     'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
-    #     'n_replicas': 15,  # 25
-    #     'n_meas_for_average': 20,  # 150
-    #     'n_annealing_steps': 100,  # 300, it seems that 100 is best
-    #     'big_gamma': (20., 0.5),
-    #     'beta': 0.5
-    # }
-
     kwargs_anneal = {
-        'annealer_type': 'SA',
+        'annealer_type': 'SQA',
         'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
-        'n_replicas': 10,
-        'n_meas_for_average': 50,
-        'n_annealing_steps': 100,
-        'big_gamma': 0.,
-        'beta': (20., 0.5)
+        'n_replicas': 15,  # 25
+        'n_meas_for_average': 5,  # 20, 150
+        'n_annealing_steps': 80,  # 100, 300, it seems that 100 is best
+        'big_gamma': (25., 0.2),
+        'beta': 0.5
     }
 
     # Training time steps
-    total_timesteps = 20000  # 500
+    total_timesteps = 3000  # 500
 
     if run_type == 'single':
         make_plots = True
@@ -577,10 +579,10 @@ if __name__ == "__main__":
         # Assume 2d_scan
         make_plots = False
 
-        param_1 = np.array([2e-2, 1e-2, 8e-3, 6e-3])
-        f_name_1 = f'rl_i_'
-        param_2 = np.array([8e-3, 4e-3, 1e-3, 6e-4])
-        f_name_2 = f'_rl_f_'
+        param_1 = np.array([25., 20., 15., 10.])
+        f_name_1 = f'G_i_'
+        param_2 = np.array([1., 0.5, 0.2, 0.1])
+        f_name_2 = f'_G_f_'
 
         results = np.zeros((n_repeats_scan, len(param_1), len(param_2)))
 
@@ -589,10 +591,10 @@ if __name__ == "__main__":
             for l, val_2 in enumerate(param_2):
                 print(f'Param. scan nb.: {k+l+1}/{tot_n_scans}')
                 for m in range(n_repeats_scan):
-                    # kwargs_anneal.update(
-                    #     {'big_gamma': (20., val_1), 'beta': val_2})
-                    kwargs_rl.update(
-                        {'learning_rate': (val_1, val_2)})
+                    kwargs_anneal.update(
+                        {'big_gamma': (val_1, val_2)})
+                    # kwargs_rl.update(
+                    #     {'learning_rate': (val_1, val_2)})
 
                     agent, results[m, k, l] = train_and_evaluate_agent(
                         kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
@@ -617,8 +619,8 @@ if __name__ == "__main__":
         plt.yticks(range(len(param_1)),
                    labels=[i for i in param_1[::-1]])
 
-        plt.xlabel('lr_f')
-        plt.ylabel('lr_i')
+        plt.xlabel('G_f')
+        plt.ylabel('G_i')
         cbar.set_label('Mean optimality (%)')
         plt.tight_layout()
         plt.savefig('mean_res.png', dpi=300)
