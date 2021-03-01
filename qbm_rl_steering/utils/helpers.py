@@ -6,7 +6,7 @@ from typing import Tuple
 from stable_baselines3 import DQN
 from tqdm import tqdm
 
-from .env_desc import TargetSteeringEnv
+from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 

@@ -3,7 +3,20 @@ import random
 import numpy as np
 from typing import Dict, Tuple, Union
 
-from qbm_rl_steering.utils.annealers import SQA, SA
+# SQAOD (simulated quantum annealing)
+try:
+    from qbm_rl_steering.utils.sqa_annealer import SQA
+except ImportError:
+    print('! Cannot import libraries (sqaod) required for SQA...')
+
+# Amazon Braket
+try:
+    from qbm_rl_steering.utils.qpu_annealer import QPU
+except ImportError:
+    print('! Cannot import libraries required for QPU (Amazon Braket)...')
+
+# DWave SimulatedAnnealing
+from qbm_rl_steering.utils.sa_annealer import SA
 
 
 def get_visible_nodes_array(state: np.ndarray, action: int,
@@ -122,6 +135,7 @@ def get_average_effective_hamiltonian(
     # h_sum_3 has shape (n_meas_for_average,)
     if big_gamma_final == 0:
         # This is to remove the w_plus term in case we use classical SA.
+        # TODO: is this correct?
         coth_term = 1.
     else:
         x = big_gamma_final * beta_final / n_replicas
@@ -176,12 +190,14 @@ class QFunction(object):
                  n_graph_nodes: int, n_replicas: int,
                  big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]],
-                 n_annealing_steps: int, n_meas_for_average: int) -> None:
+                 n_annealing_steps: int, n_meas_for_average: int,
+                 kwargs_qpu) -> None:
         """
         Implementation of the Q function (state-action value function) using
         an SQA method to update / train.
-        :param annealer_type: choose between simulated quantum annealing (SQA)
-        or classical annealing (SA) (use big_gamma = 0 with SA).
+        :param annealer_type: choose between simulated quantum annealing (SQA),
+        classical annealing (SA), or Quantum annealing on hardware (QPU) (use
+        big_gamma = 0 with SA)
         :param n_bits_observation_space: number of bits used to encode
         observation space of environment
         :param n_bits_action_space: number of bits required to encode the
@@ -203,6 +219,8 @@ class QFunction(object):
         annealing process from start to end
         :param n_annealing_steps: number of steps that one annealing
         process should take (~annealing time).
+        :param kwargs_qpu: additional keyword arguments required for the
+        initialization of the DWAVE QPU on Amazon Braket.
         """
         if annealer_type == 'SQA':
             self.annealer = SQA(
@@ -211,8 +229,14 @@ class QFunction(object):
         elif annealer_type == 'SA':
             self.annealer = SA(
                 beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes)
+        elif annealer_type == 'QPU':
+            self.annealer = QPU(
+                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
+                device=kwargs_qpu['aws_device'],
+                s3_location=kwargs_qpu['s3_location'])
         else:
-            raise ValueError("Annealer_type must be either 'SQA' or 'SA'.")
+            raise ValueError("Annealer_type must be either 'SQA', 'SA', "
+                             "or 'QPU'.")
 
         self.annealer_type = annealer_type
 
@@ -302,7 +326,7 @@ class QFunction(object):
         qubo_dict = create_general_qubo_dict(
             self.w_hh, self.w_vh, visible_nodes)
 
-        # Run the annealing process (will be either SA or SQA)
+        # Run the annealing process (will be either SA, SQA, or QPU)
         spin_configurations = self.annealer.anneal(
             qubo_dict=qubo_dict,
             n_meas_for_average=self.n_meas_for_average,

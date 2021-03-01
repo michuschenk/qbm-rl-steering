@@ -5,7 +5,7 @@ from tqdm import tqdm
 from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
 
-import environment.helpers as hlp
+import qbm_rl_steering.utils.helpers as hlp
 from environment.env_desc import TargetSteeringEnv
 
 N_BITS_OBSERVATION_SPACE = 8
