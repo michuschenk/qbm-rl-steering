@@ -83,7 +83,28 @@ class QPU:
         spin_configurations = np.array([
             list(s.values()) for s in spin_configurations])
         spin_configurations[spin_configurations == 0] = -1
+
+        # This is to get around the issue that the QPU sometimes does not
+        # return all the requested samples (i.e. len(spin_configurations !=
+        # num_reads)).
+        num_reads_effective = spin_configurations.shape[0]
+
+        # Drop the spin_configurations that are not complete for all
+        # replicas
+        n_configs_missing = num_reads - num_reads_effective
+        n_sets_to_drop = n_configs_missing // self.n_replicas + 1
+        n_meas_for_average_effective = n_meas_for_average-n_sets_to_drop
+        n_configs_to_drop = n_sets_to_drop * self.n_replicas
+        n_configs_to_drop -= n_configs_missing
+        spin_configurations = spin_configurations[:-n_configs_to_drop, :]
+
+        # Reshape
         spin_configurations = spin_configurations.reshape(
-            (n_meas_for_average, self.n_replicas, self.n_nodes))
+            (n_meas_for_average_effective, self.n_replicas, self.n_nodes))
+
+        if num_reads_effective != num_reads:
+            # Just for info...
+            print('Sampler did not return expected number of reads... drop '
+                  'incomplete measurements.')
 
         return spin_configurations
