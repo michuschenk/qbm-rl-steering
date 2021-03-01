@@ -1,8 +1,11 @@
 from typing import Tuple, Dict
 import numpy as np
 
-from braket.ocean_plugin import BraketDWaveSampler
-from dwave.system.composites import EmbeddingComposite
+try:
+    from braket.ocean_plugin import BraketDWaveSampler
+    from dwave.system.composites import EmbeddingComposite
+except ImportError:
+    pass
 
 
 class QPU:

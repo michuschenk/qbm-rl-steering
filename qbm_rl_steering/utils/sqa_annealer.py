@@ -1,8 +1,11 @@
 from typing import Tuple, Dict
 import numpy as np
 
-# Found this library that does SQA (is CUDA enabled in principle)
-import sqaod as sq
+try:
+    # Found this library that does SQA (is CUDA enabled in principle)
+    import sqaod as sq
+except ImportError:
+    pass
 
 
 class SQA:
