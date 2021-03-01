@@ -72,7 +72,8 @@ class QPU:
         :return Spin configurations, i.e. {-1, 1} of all the nodes and
         n_replicas (# Trotter slices) for all the n_meas_for_average runs we
         do. np array with dimensions
-        (n_meas_for_average, n_replicas, n_hidden_nodes).
+        (n_meas_for_average, n_replicas, n_hidden_nodes). Note that somehow
+        the DWave unit does not always give as many samples as we request...
         """
         num_reads = n_meas_for_average * self.n_replicas
         spin_configurations = list(self.annealer.sample_qubo(
@@ -83,6 +84,6 @@ class QPU:
             list(s.values()) for s in spin_configurations])
         spin_configurations[spin_configurations == 0] = -1
         spin_configurations = spin_configurations.reshape(
-            (n_meas_for_average, self.n_replicas, self.n_nodes))
+            (-1, self.n_replicas, self.n_nodes))
 
         return spin_configurations
