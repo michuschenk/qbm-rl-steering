@@ -83,6 +83,7 @@ class QBMQN(object):
 
         self.possible_actions = [
             act for act in range(self.env.action_space.n)]
+
         self.q_function = utl.QFunction(
             annealer_type=annealer_type,
             n_bits_observation_space=n_bits_observation_space,

@@ -228,7 +228,8 @@ class QFunction(object):
                 n_nodes=n_graph_nodes)
         elif annealer_type == 'SA':
             self.annealer = SA(
-                beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes)
+                beta=beta, big_gamma=big_gamma, n_replicas=n_replicas,
+                n_nodes=n_graph_nodes, n_annealing_steps=n_annealing_steps)
         elif annealer_type == 'QPU':
             self.annealer = QPU(
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,

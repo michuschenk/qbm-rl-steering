@@ -20,29 +20,29 @@ kwargs_env = {
 
 # RL settings
 kwargs_rl = {
-    'learning_rate': (0.008, 0.004),
-    'small_gamma': 0.85,
+    'learning_rate': (0.001, 0.0005),
+    'small_gamma': 0.9,  # 0.85
     'exploration_epsilon': (1.0, 0.04),
-    'exploration_fraction': 0.7
+    'exploration_fraction': 0.6
 }
 
 # Graph config and quantum annealing settings
 # Commented values are what's in the paper
 kwargs_anneal = {
-    'annealer_type': 'QPU',
+    'annealer_type': 'SA',
     'kwargs_qpu': {'aws_device':
                    'arn:aws:braket:::device/qpu/d-wave/DW_2000Q_6',
                    's3_location': None},
     'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
-    'n_replicas': 1,  # 25
-    'n_meas_for_average': 5,  # 20, 150
-    'n_annealing_steps': 80,  # 100, 300, it seems that 100 is best
-    'big_gamma': (20., 0.5),
-    'beta': 0.2
+    'n_replicas': 25,  # 25
+    'n_meas_for_average': 150,  # 20, 150
+    'n_annealing_steps': 1000,  # 100, 300, it seems that 100 is best
+    'big_gamma': 0.01,
+    'beta': (0.01, 2.),
 }
 
 # Training time steps
-total_timesteps = 3000  # 500
+total_timesteps = 500  # 500
 
 if run_type == 'single':
     make_plots = True

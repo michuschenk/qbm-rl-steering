@@ -7,8 +7,9 @@ from neal import SimulatedAnnealingSampler
 
 
 class SA:
-    def __init__(self, beta: Tuple[float, float], n_replicas: int,
-                 n_nodes: int = 16, beta_schedule: str = 'linear') -> None:
+    def __init__(self, beta: Tuple[float, float], big_gamma: float,
+                 n_replicas: int, n_annealing_steps: int, n_nodes: int = 16,
+                 beta_schedule: str = 'linear') -> None:
         """
         Initialize a simulated annealer (SA) using the dwave neal library.
         :param beta: inverse temperature. First and last entry of tuple
@@ -17,6 +18,8 @@ class SA:
         :param n_replicas: number of replications of the graph in the extended
         dimension (number of Trotter slices). Believe that n_replicas = 1 in
         classical annealing.
+        :param n_annealing_steps: number of steps for the beta decay of the
+        annealing (corresponds to num_sweeps in DWAVE interface)?
         :param n_nodes: the number of qubits of the chip / problem to be
         simulated. Default is set to 16 (which corresponds to the 2 unit
         cells of the DWAVE-2000). This number is also the size of the square
@@ -26,9 +29,9 @@ class SA:
         """
         self.n_nodes = n_nodes
 
-        if n_replicas > 1:
-            print("! Using classical annealing: setting n_replicas = 1.")
-        self.n_replicas = 1
+        # if n_replicas > 1:
+        #     print("! Using classical annealing: setting n_replicas = 1.")
+        self.n_replicas = n_replicas
 
         # D-WAVE SA
         self.annealer = SimulatedAnnealingSampler()
@@ -44,6 +47,8 @@ class SA:
                   "initial temperature is smaller than the final one. This is "
                   "contrary to the typical annealing process.")
 
+        self.n_annealing_steps = n_annealing_steps
+
         self.beta_schedule = beta_schedule
         self.beta_init = beta[0]
         self.beta_final = beta[1]
@@ -51,9 +56,9 @@ class SA:
         # For classical annealing we should use big_gamma == 0 throughout.
         # This will not go into the annealer, but is important to be set for
         # the calculation of the effective Hamiltonian, for example.
-        print(" ! Warning: using classical annealer: setting big_gamma = 0.")
-        self.big_gamma_init = 0.
-        self.big_gamma_final = 0.
+        # print(" ! Warning: using classical annealer: setting big_gamma = 0.")
+        self.big_gamma_init = big_gamma
+        self.big_gamma_final = big_gamma
 
     def anneal(self, qubo_dict: Dict, n_meas_for_average: int,
                *args, **kwargs) -> np.ndarray:
@@ -85,7 +90,8 @@ class SA:
         spin_configurations = list(self.annealer.sample_qubo(
             Q=qubo_dict, num_reads=num_reads,
             beta_schedule_type=self.beta_schedule,
-            beta_range=(self.beta_init, self.beta_final)).samples())
+            beta_range=(self.beta_init, self.beta_final),
+            num_sweeps=self.n_annealing_steps).samples())
 
         # Convert to np array and flip all the 0s to -1s
         spin_configurations = np.array([

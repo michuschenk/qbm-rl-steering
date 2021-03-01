@@ -93,9 +93,8 @@ class QPU:
         # replicas
         n_configs_missing = num_reads - num_reads_effective
         n_sets_to_drop = n_configs_missing // self.n_replicas + 1
-        n_meas_for_average_effective = n_meas_for_average-n_sets_to_drop
-        n_configs_to_drop = n_sets_to_drop * self.n_replicas
-        n_configs_to_drop -= n_configs_missing
+        n_meas_for_average_effective = n_meas_for_average - n_sets_to_drop
+        n_configs_to_drop = n_sets_to_drop * self.n_replicas - n_configs_missing
         spin_configurations = spin_configurations[:-n_configs_to_drop, :]
 
         # Reshape
