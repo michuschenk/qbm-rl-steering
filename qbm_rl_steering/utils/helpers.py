@@ -154,7 +154,8 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
     plt.show()
 
 
-def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
+def plot_log(env: TargetSteeringEnv, fig_title: str = '',
+             save_name: str = 'training_log.png') -> None:
     """ Plot the evolution of the state, action, and reward using the data
     stored in environment logger .
     :param env: OpenAI gym-based environment of transfer line
@@ -207,6 +208,7 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '') -> None:
     axs[2].legend(loc='lower left', fontsize=10)
     axs[-1].set_xlabel('Episode')
     plt.tight_layout()
+    plt.savefig(save_name, dpi=300)
     plt.show()
 
 
