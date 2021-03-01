@@ -2,7 +2,7 @@ from typing import Tuple, Dict
 import numpy as np
 
 try:
-    from braket.ocean_plugin import BraketDWaveSampler
+    from braket.ocean_plugin import BraketSampler
     from dwave.system.composites import EmbeddingComposite
 except ImportError:
     pass
@@ -33,7 +33,7 @@ class QPU:
         self.n_replicas = n_replicas
 
         # D-WAVE QA
-        sampler = BraketDWaveSampler(s3_location, device)
+        sampler = BraketSampler(s3_location, device)
         self.annealer = EmbeddingComposite(sampler)
 
         print(" ! Warning: big_gammas are 'fake'. We don't know the actual "
@@ -72,18 +72,18 @@ class QPU:
         :return Spin configurations, i.e. {-1, 1} of all the nodes and
         n_replicas (# Trotter slices) for all the n_meas_for_average runs we
         do. np array with dimensions
-        (n_meas_for_average, n_replicas, n_hidden_nodes). Note that somehow
-        the DWave unit does not always give as many samples as we request...
+        (n_meas_for_average, n_replicas, n_hidden_nodes).
         """
         num_reads = n_meas_for_average * self.n_replicas
         spin_configurations = list(self.annealer.sample_qubo(
-            Q=qubo_dict, num_reads=num_reads, beta=self.beta_final).samples())
+            Q=qubo_dict, shots=num_reads, beta=self.beta_final,
+            postprocessingType='SAMPLING').samples())
 
         # Convert to np array and flip all the 0s to -1s
         spin_configurations = np.array([
             list(s.values()) for s in spin_configurations])
         spin_configurations[spin_configurations == 0] = -1
         spin_configurations = spin_configurations.reshape(
-            (-1, self.n_replicas, self.n_nodes))
+            (n_meas_for_average, self.n_replicas, self.n_nodes))
 
         return spin_configurations
