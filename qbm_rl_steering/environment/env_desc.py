@@ -123,7 +123,7 @@ class TargetSteeringEnv(gym.Env):
         self.simple_reward = simple_reward
         self.step_count = None
         self.max_steps_per_episode = max_steps_per_episode
-        self.reward_threshold = 0.9 * self.get_max_reward()
+        self.reward_threshold = 0.98 * self.get_max_reward()
 
         # Logging and debugging
         self.logger = Logger()
@@ -252,10 +252,11 @@ class TargetSteeringEnv(gym.Env):
         :param reward: input reward
         :return discretized simplified reward
         """
-        if reward > self.reward_threshold:
-            reward = 100.
-        else:
-            reward = 0.
+        # if reward > self.reward_threshold:
+        #     reward = 100.
+        # else:
+        #     reward = 0.
+        reward = -(1. - reward)
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:

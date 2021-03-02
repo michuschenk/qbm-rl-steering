@@ -87,6 +87,13 @@ def evaluate_performance(n_evaluations: int = 30, n_steps_train: int = 2000,
 
         # Run agent training
         agent.learn(total_timesteps=n_steps_train)
+        # plot_every = 1000
+        # for i in range(0, n_steps_train, plot_every):
+        #     agent.learn(total_timesteps=plot_every)
+        #     hlp.plot_q_net_response(
+        #         env, agent, f'Q-net response, step {i}',
+        #         save_name=f'output_plots/qnet_{i}.png')
+
         if make_plots:
             hlp.plot_log(env, fig_title='Agent training')
 
@@ -184,7 +191,7 @@ if __name__ == "__main__":
 
         metric_avg[i], metric_std[i] = evaluate_performance(
             scan_params=scan_params,
-            n_steps_train=60000, max_steps_per_episode=30,
+            n_steps_train=4000, max_steps_per_episode=25,
             n_evaluations=1, simple_reward=True, make_plots=True)
 
     show_scan_result(scan_values, metric_avg, metric_std, scenario)
