@@ -153,6 +153,7 @@ def get_average_effective_hamiltonian(
     h_sum_3 = -w_plus * (hk_hkplus1_sum + h1_hr_sum)
 
     # Take average over n_meas_for_average
+    print('Avg. eff. Hamiltonian', float(np.mean(h_sum_12 + h_sum_3)))
     return float(np.mean(h_sum_12 + h_sum_3))
 
 
@@ -181,6 +182,7 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
     mean_n_occurrences = n_occurrences / float(np.sum(n_occurrences))
     a_sum = np.sum(mean_n_occurrences * np.log10(mean_n_occurrences))
 
+    print('Free energy', avg_eff_hamiltonian + a_sum / beta_final)
     return avg_eff_hamiltonian + a_sum / beta_final
 
 

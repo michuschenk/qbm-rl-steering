@@ -103,7 +103,8 @@ class QPU:
 
         if num_reads_effective != num_reads:
             # Just for info...
-            print('Sampler did not return expected number of reads... drop '
-                  'incomplete measurements.')
+            print(f'Sampler did not return expected number of reads. '
+                  f'Expected: {num_reads}. Effectively received: '
+                  f'{num_reads_effective}.')
 
         return spin_configurations
