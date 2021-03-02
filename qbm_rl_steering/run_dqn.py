@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
         metric_avg[i], metric_std[i] = evaluate_performance(
             scan_params=scan_params,
-            n_steps_train=4000, max_steps_per_episode=25,
+            n_steps_train=6000, max_steps_per_episode=25,
             n_evaluations=1, simple_reward=True, make_plots=True)
 
     show_scan_result(scan_values, metric_avg, metric_std, scenario)
