@@ -75,19 +75,22 @@ class QPU:
         (n_meas_for_average, n_replicas, n_hidden_nodes).
         """
         num_reads = n_meas_for_average * self.n_replicas
-        spin_configurations = list(self.annealer.sample_qubo(
-            Q=qubo_dict, shots=num_reads, beta=self.beta_final,
-            postprocessingType='SAMPLING').samples())
 
-        # Convert to np array and flip all the 0s to -1s
-        spin_configurations = np.array([
-            list(s.values()) for s in spin_configurations])
-        spin_configurations[spin_configurations == 0] = -1
+        num_reads_effective = 0.
+        while num_reads_effective < (num_reads / 2.):
+            spin_configurations = list(self.annealer.sample_qubo(
+                Q=qubo_dict, shots=num_reads, beta=self.beta_final,
+                postprocessingType='SAMPLING').samples())
 
-        # This is to get around the issue that the QPU sometimes does not
-        # return all the requested samples (i.e. len(spin_configurations !=
-        # num_reads)).
-        num_reads_effective = spin_configurations.shape[0]
+            # Convert to np array and flip all the 0s to -1s
+            spin_configurations = np.array([
+                list(s.values()) for s in spin_configurations])
+            spin_configurations[spin_configurations == 0] = -1
+
+            # This is to get around the issue that the QPU sometimes does not
+            # return all the requested samples (i.e. len(spin_configurations !=
+            # num_reads)).
+            num_reads_effective = spin_configurations.shape[0]
 
         # Drop the spin_configurations that are not complete for all
         # replicas
