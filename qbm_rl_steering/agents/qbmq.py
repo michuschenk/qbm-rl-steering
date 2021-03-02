@@ -439,18 +439,21 @@ def calculate_policy_optimality(env: TargetSteeringEnv, states: np.ndarray,
 
 def train_and_evaluate_agent(
         kwargs_env: Dict, kwargs_rl: Dict, kwargs_anneal: Dict,
-        total_timesteps: int, make_plots: bool = True) \
-        -> Tuple[QBMQN, float]:
+        total_timesteps: int, make_plots: bool = True,
+        calc_optimality: bool = False) -> Tuple[QBMQN, float]:
     """
 
     """
+    if make_plots:
+        calc_optimality = True
+
     # Initialize environment
     env = TargetSteeringEnv(**kwargs_env)
 
     # Initialize agent and train
     agent = QBMQN(env=env, **kwargs_anneal, **kwargs_rl)
-    visited_states = agent.learn(total_timesteps=total_timesteps,
-                                 play_out_episode=True)
+    visited_states = agent.learn(
+        total_timesteps=total_timesteps, play_out_episode=True)
     # When using learn_systematic it's best to make sure you sweep through
     # all states at least once.
     # visited_states = agent.learn_systematic(total_timesteps=total_timesteps)
@@ -470,7 +473,8 @@ def train_and_evaluate_agent(
     # hlp.evaluate_agent(env, agent, n_episodes=10, make_plot=True,
     #                    fig_title = 'Agent evaluation')
 
-    states_q, q_values, best_action = find_policy_from_q(agent)
+    if calc_optimality:
+        states_q, q_values, best_action = find_policy_from_q(agent)
 
     # Get state (x pos.) where reward threshold is
     _, x, r = env.get_response()
@@ -481,5 +485,7 @@ def train_and_evaluate_agent(
             states_q, q_values, best_action, states_v, v_star_values,
             visited_states, x_reward_thresh)
 
-    policy_optimality = calculate_policy_optimality(env, states_q, best_action)
+    policy_optimality = None
+    if calc_optimality:
+        policy_optimality = calculate_policy_optimality(env, states_q, best_action)
     return agent, policy_optimality

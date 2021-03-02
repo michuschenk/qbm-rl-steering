@@ -52,6 +52,21 @@ if run_type == 'single':
         make_plots=make_plots)
     print(f'Optimality {optimality:.2f} %')
 
+    # Plot weights
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 7))
+    for k, val in agent.q_function.w_hh_history.items():
+        axs[0].plot(val, label=str(k))
+    for k, val in agent.q_function.w_vh_history.items():
+        axs[1].plot(val, label=str(k))
+
+    axs[0].set_ylabel('w_hh')
+    axs[1].set_ylabel('w_hh')
+    axs[1].set_xlabel('Iteration')
+
+    # axs[0].legend(loc='lower right')
+    # axs[1].legend(loc='lower right')
+    plt.show()
+
     if save_agents:
         agent_path = agent_directory + 'single_run.pkl'
         with open(agent_path, 'wb') as fid:

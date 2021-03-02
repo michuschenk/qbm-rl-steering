@@ -251,6 +251,15 @@ class QFunction(object):
         self.n_bits_action_space = n_bits_action_space
         self.w_hh, self.w_vh = self._initialise_weights()
 
+        # Keep track of the weights
+        self.w_hh_history, self.w_vh_history = {}, {}
+        for k in self.w_hh.keys():
+            self.w_hh_history[k] = []
+            self.w_hh_history[k].append(self.w_hh[k])
+        for k in self.w_vh.keys():
+            self.w_vh_history[k] = []
+            self.w_vh_history[k].append(self.w_vh[k])
+
     def _initialise_weights(self) -> Tuple[Dict, Dict]:
         """
         Initialise the coupling weights of the Chimera graph, i.e. both
@@ -380,3 +389,9 @@ class QFunction(object):
             self.w_hh[(h, h_prime)] += update_factor * np.mean(
                 spin_configurations[:, :, h] *
                 spin_configurations[:, :, h_prime])
+
+        # Keep track of the weights
+        for k in self.w_hh.keys():
+            self.w_hh_history[k].append(self.w_hh[k])
+        for k in self.w_vh.keys():
+            self.w_vh_history[k].append(self.w_vh[k])
