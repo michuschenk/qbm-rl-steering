@@ -2,7 +2,7 @@ from typing import Tuple, Dict
 import numpy as np
 
 try:
-    from braket.ocean_plugin import BraketSampler
+    from braket.ocean_plugin import BraketDWaveSampler
     from dwave.system.composites import EmbeddingComposite
 except ImportError:
     pass
@@ -33,7 +33,7 @@ class QPU:
         self.n_replicas = n_replicas
 
         # D-WAVE QA
-        sampler = BraketSampler(s3_location, device)
+        sampler = BraketDWaveSampler(s3_location, device)
         self.annealer = EmbeddingComposite(sampler)
 
         print(" ! Warning: big_gammas are 'fake'. We don't know the actual "
@@ -79,12 +79,19 @@ class QPU:
         # This is to get around the issue that the QPU sometimes does not
         # return all the requested samples (i.e. len(spin_configurations !=
         # num_reads)).
-        num_reads_effective = 0.
+        num_reads_effective = 0
         spin_configurations = []
         while num_reads_effective < (0.8 * num_reads):
+            # We increase the thermalization time after readout to make sure
+            # that the QPU cools down enough before requesting shots again
+            # The intersample correlation flag adds additional time between
+            # anneals to make sure the measurements are independent.
             spin_configurations += list(self.annealer.sample_qubo(
-                Q=qubo_dict, shots=num_reads, beta=self.beta_final,
-                postprocessingType='SAMPLING').samples())
+                Q=qubo_dict, num_reads=num_reads-num_reads_effective,
+                beta=self.beta_final, postprocess='SAMPLING',
+                readout_thermalization=9900,
+                reduce_intersample_correlation=True
+            ).samples())
             num_reads_effective = len(spin_configurations)
 
         # Convert to np array and flip all the 0s to -1s
