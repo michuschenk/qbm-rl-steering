@@ -89,8 +89,9 @@ class QPU:
             spin_configurations += list(self.annealer.sample_qubo(
                 Q=qubo_dict, num_reads=num_reads-num_reads_effective,
                 beta=self.beta_final, postprocess='SAMPLING',
-                readout_thermalization=9900,
-                reduce_intersample_correlation=True
+                readout_thermalization=0,
+                reduce_intersample_correlation=True,
+                answer_mode='raw'
             ).samples())
             num_reads_effective = len(spin_configurations)
 
