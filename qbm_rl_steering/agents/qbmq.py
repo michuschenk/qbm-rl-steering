@@ -331,12 +331,9 @@ class QBMQN(object):
         :return epsilon array including decay.
         """
         n_steps_decay = int(self.exploration_fraction * total_timesteps)
-        eps_step = (
-            (self.exploration_epsilon_final - self.exploration_epsilon_init) /
-            n_steps_decay)
-        eps_decay = np.arange(
+        eps_decay = np.linspace(
             self.exploration_epsilon_init, self.exploration_epsilon_final,
-            eps_step)
+            n_steps_decay)
         eps = np.ones(total_timesteps) * self.exploration_epsilon_final
         eps[:n_steps_decay] = eps_decay
         return eps
