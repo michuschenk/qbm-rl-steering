@@ -76,46 +76,21 @@ class QPU:
         """
         num_reads = n_meas_for_average * self.n_replicas
 
-        # This is to get around the issue that the QPU sometimes does not
-        # return all the requested samples (i.e. len(spin_configurations !=
-        # num_reads)).
-        num_reads_effective = 0
-        spin_configurations = []
-        while num_reads_effective < (0.8 * num_reads):
-            # We increase the thermalization time after readout to make sure
-            # that the QPU cools down enough before requesting shots again
-            # The intersample correlation flag adds additional time between
-            # anneals to make sure the measurements are independent.
-            spin_configurations += list(self.annealer.sample_qubo(
-                Q=qubo_dict, num_reads=num_reads-num_reads_effective,
-                beta=self.beta_final, postprocess='SAMPLING',
-                readout_thermalization=0,
-                reduce_intersample_correlation=True,
-                answer_mode='raw'
-            ).samples())
-            num_reads_effective = len(spin_configurations)
+        spin_configurations = list(self.annealer.sample_qubo(
+            Q=qubo_dict, num_reads=num_reads,
+            beta=self.beta_final, postprocess='SAMPLING',
+            readout_thermalization=0,
+            reduce_intersample_correlation=True,
+            answer_mode='raw'
+        ).samples())
 
         # Convert to np array and flip all the 0s to -1s
         spin_configurations = np.array([
             list(s.values()) for s in spin_configurations])
         spin_configurations[spin_configurations == 0] = -1
 
-        # Drop the spin_configurations that are not complete for all
-        # replicas
-        n_configs_missing = num_reads - num_reads_effective
-        n_sets_to_drop = n_configs_missing // self.n_replicas + 1
-        n_meas_for_average_effective = n_meas_for_average - n_sets_to_drop
-        n_configs_to_drop = n_sets_to_drop * self.n_replicas - n_configs_missing
-        spin_configurations = spin_configurations[:-n_configs_to_drop, :]
-
         # Reshape
         spin_configurations = spin_configurations.reshape(
-            (n_meas_for_average_effective, self.n_replicas, self.n_nodes))
-
-        if num_reads_effective != num_reads:
-            # Just for info...
-            print(f'Sampler did not return expected number of reads. '
-                  f'Expected: {num_reads}. Effectively received: '
-                  f'{num_reads_effective}.')
+            (n_meas_for_average, self.n_replicas, self.n_nodes))
 
         return spin_configurations
