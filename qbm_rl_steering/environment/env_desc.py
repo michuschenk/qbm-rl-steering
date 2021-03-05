@@ -71,9 +71,9 @@ class TargetSteeringEnv(gym.Env):
         # mssb_min, mssb_max: min. and max. dipole strengths for init. (rad)
         # mssb_delta: amount of discrete change in mssb_angle upon action (rad)
         self.mssb_angle = None  # not set, will be init. with self.reset()
-        self.mssb_angle_min = -160e-6  # (rad)
-        self.mssb_angle_max = 160e-6  # (rad)
-        self.mssb_delta = 10e-6  # discrete action step (rad)
+        self.mssb_angle_min = -140e-6  # (rad)
+        self.mssb_angle_max = 140e-6  # (rad)
+        self.mssb_delta = 15e-6  # discrete action step (rad)
 
         # BEAM POSITION
         # x0: position at origin, i.e. before entering MSSB
@@ -123,7 +123,7 @@ class TargetSteeringEnv(gym.Env):
         self.simple_reward = simple_reward
         self.step_count = None
         self.max_steps_per_episode = max_steps_per_episode
-        self.reward_threshold = 0.9 * self.get_max_reward()
+        self.reward_threshold = 0.85 * self.get_max_reward()
 
         # Logging and debugging
         self.logger = Logger()
@@ -252,11 +252,11 @@ class TargetSteeringEnv(gym.Env):
         :param reward: input reward
         :return discretized simplified reward
         """
-        # if reward > self.reward_threshold:
-        #     reward = 100.
-        # else:
-        #     reward = 0.
-        reward = -(1. - reward)
+        if reward > self.reward_threshold:
+            reward = 100.
+        else:
+            reward = 0.
+        # reward = -(1. - reward)
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:

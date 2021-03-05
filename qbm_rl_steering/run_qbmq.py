@@ -8,41 +8,41 @@ from qbm_rl_steering.agents.qbmq import train_and_evaluate_agent
 run_type = 'single'
 save_agents = False
 agent_directory = 'trained_agents/'
-n_repeats_scan = 6  # How many times to run the same parameters in scans
+n_repeats_scan = 5  # How many times to run the same parameters in scans
 
 # Environment settings
 kwargs_env = {
     'n_bits_observation_space': 8,
     'n_actions': 2,
     'simple_reward': True,
-    'max_steps_per_episode': 25
+    'max_steps_per_episode': 10
 }
 
 # RL settings
 kwargs_rl = {
-    'learning_rate': (0.001, 0.0005),
-    'small_gamma': 0.9,  # 0.85
+    'learning_rate': (0.02, 0.01),
+    'small_gamma': 0.85,  # 0.85
     'exploration_epsilon': (1.0, 0.04),
-    'exploration_fraction': 0.6
+    'exploration_fraction': 0.9
 }
 
 # Graph config and quantum annealing settings
 # Commented values are what's in the paper
 kwargs_anneal = {
-    'annealer_type': 'SA',
+    'annealer_type': 'SQA',
     'kwargs_qpu': {'aws_device':
                    'arn:aws:braket:::device/qpu/d-wave/DW_2000Q_6',
                    's3_location': None},
     'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
-    'n_replicas': 25,  # 25
-    'n_meas_for_average': 150,  # 20, 150
-    'n_annealing_steps': 1000,  # 100, 300, it seems that 100 is best
-    'big_gamma': 0.01,
-    'beta': (0.01, 2.),
+    'n_replicas': 10,  # 10
+    'n_meas_for_average': 30,  # 30
+    'n_annealing_steps': 100,  # 100, 300, it seems that 100 is best
+    'big_gamma': (25., 0.5),  # 0.5
+    'beta': 0.5,
 }
 
 # Training time steps
-total_timesteps = 500  # 500
+total_timesteps = 300  # 500
 
 if run_type == 'single':
     make_plots = True
@@ -59,8 +59,8 @@ if run_type == 'single':
     for k, val in agent.q_function.w_vh_history.items():
         axs[1].plot(val, label=str(k))
 
-    axs[0].set_ylabel('w_hh')
-    axs[1].set_ylabel('w_hh')
+    axs[0].set_ylabel(r'$w_{{hh}}$')
+    axs[1].set_ylabel(r'$w_{{vh}}$')
     axs[1].set_xlabel('Iteration')
 
     # axs[0].legend(loc='lower right')
@@ -75,21 +75,22 @@ if run_type == 'single':
 elif run_type == '1d_scan':
     make_plots = False
 
-    param_arr = np.array([10, 15, 20, 25, 30, 35, 40, 45, 50])
-    f_name = 'n_replicas_'
+    param_arr = np.array([100, 300, 500, 700, 900, 1100, 1300])
+    f_name = 'n_training_steps'
     results = np.zeros((n_repeats_scan, len(param_arr)))
 
     tot_n_scans = len(param_arr)
     for k, val in enumerate(param_arr):
         print(f'Param. scan nb.: {k + 1}/{tot_n_scans}')
 
-        kwargs_anneal.update({'n_replicas': int(val)})
+        # kwargs_anneal.update({'n_replicas': int(val)})
         for m in range(n_repeats_scan):
             agent, results[m, k] = train_and_evaluate_agent(
                 kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
                 kwargs_anneal=kwargs_anneal,
-                total_timesteps=total_timesteps,
-                make_plots=make_plots)
+                total_timesteps=val,
+                make_plots=make_plots,
+                calc_optimality=True)
 
             if save_agents:
                 agent_path = agent_directory + f_name + f'{val}_run_{m}.pkl'
@@ -107,7 +108,7 @@ elif run_type == '1d_scan':
         cap.set_color('tab:red')
         cap.set_markeredgewidth(2)
 
-    plt.xlabel('n_replicas')
+    plt.xlabel('n_training_steps')
     plt.ylabel('Optimality (%)')
     plt.tight_layout()
     plt.show()
@@ -116,10 +117,10 @@ else:
     # Assume 2d_scan
     make_plots = False
 
-    param_1 = np.array([25., 20., 15., 10.])
-    f_name_1 = f'G_i_'
-    param_2 = np.array([1., 0.5, 0.2, 0.1])
-    f_name_2 = f'_G_f_'
+    param_1 = np.array([0.02, 0.1])
+    f_name_1 = f'beta_i_'
+    param_2 = np.array([2., 5.])
+    f_name_2 = f'_beta_f_'
 
     results = np.zeros((n_repeats_scan, len(param_1), len(param_2)))
 
@@ -129,7 +130,7 @@ else:
             print(f'Param. scan nb.: {k+l+1}/{tot_n_scans}')
             for m in range(n_repeats_scan):
                 kwargs_anneal.update(
-                    {'big_gamma': (val_1, val_2)})
+                    {'beta': (val_1, val_2)})
                 # kwargs_rl.update(
                 #     {'learning_rate': (val_1, val_2)})
 
@@ -137,7 +138,8 @@ else:
                     kwargs_env=kwargs_env, kwargs_rl=kwargs_rl,
                     kwargs_anneal=kwargs_anneal,
                     total_timesteps=total_timesteps,
-                    make_plots=make_plots)
+                    make_plots=make_plots,
+                    calc_optimality=True)
 
                 if save_agents:
                     agent_path = (
@@ -156,8 +158,8 @@ else:
     plt.yticks(range(len(param_1)),
                labels=[i for i in param_1[::-1]])
 
-    plt.xlabel('G_f')
-    plt.ylabel('G_i')
+    plt.xlabel('beta_f')
+    plt.ylabel('beta_i')
     cbar.set_label('Mean optimality (%)')
     plt.tight_layout()
     plt.savefig('mean_res.png', dpi=300)
@@ -173,8 +175,8 @@ else:
     plt.yticks(range(len(param_1)),
                labels=[i for i in param_1[::-1]])
 
-    plt.xlabel('lr_f')
-    plt.ylabel('lr_i')
+    plt.xlabel('beta_f')
+    plt.ylabel('beta_i')
     cbar.set_label('Std. optimality (%)')
     plt.tight_layout()
     plt.savefig('std_res.png', dpi=300)
