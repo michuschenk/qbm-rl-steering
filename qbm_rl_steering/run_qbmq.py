@@ -35,7 +35,7 @@ kwargs_anneal = {
                    's3_location': None},
     'n_graph_nodes': 16,  # nodes of Chimera graph (2 units DWAVE)
     'n_replicas': 10,  # 10
-    'n_meas_for_average': 30,  # 30
+    'n_meas_for_average': 20,  # 30
     'n_annealing_steps': 100,  # 100, 300, it seems that 100 is best
     'big_gamma': (25., 0.5),  # 0.5
     'beta': 0.5,
