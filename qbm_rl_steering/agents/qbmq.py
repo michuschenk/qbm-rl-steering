@@ -25,6 +25,7 @@ class QBMQN(object):
                  big_gamma: Tuple[float, float] = (20., 0.5),
                  beta: float = 2.0,
                  learning_rate: Tuple[float, float] = (1e-3, 1e-3),
+                 lr_kwargs=None,
                  small_gamma: float = 0.99,
                  exploration_fraction: float = 0.8,
                  exploration_epsilon: Tuple[float, float] = (1., 0.05),
@@ -64,6 +65,9 @@ class QBMQN(object):
         :param kwargs_qpu: additional keyword arguments required for the
         initialization of the DWAVE QPU on Amazon Braket.
         """
+        if lr_kwargs is None:
+            lr_kwargs = {'learning_rate_schedule': 'linear', 'n_warmup': 50}
+        self.lr_kwargs = lr_kwargs
         self.env = env
 
         # RL parameters
@@ -148,7 +152,8 @@ class QBMQN(object):
         visited_states = []
 
         # learning_rate decay schedule
-        learning_rate = self._get_learning_rate_schedule(total_timesteps)
+        learning_rate = self._get_learning_rate_schedule(total_timesteps,
+                                                         **self.lr_kwargs)
 
         all_states_float, all_states_binary = self.env.get_all_states()
         if total_timesteps < len(all_states_binary):
@@ -218,7 +223,8 @@ class QBMQN(object):
         epsilon = self._get_epsilon_schedule(total_timesteps)
 
         # learning_rate decay schedule
-        learning_rate = self._get_learning_rate_schedule(total_timesteps)
+        learning_rate = self._get_learning_rate_schedule(total_timesteps,
+                                                         **self.lr_kwargs)
 
         # This is to trigger the initialization of a new episode at the
         # beginning of the training loop
@@ -338,14 +344,26 @@ class QBMQN(object):
         eps[:n_steps_decay] = eps_decay
         return eps
 
-    def _get_learning_rate_schedule(self, total_timesteps: int) -> np.ndarray:
+    def _get_learning_rate_schedule(self, total_timesteps: int,
+                                    learning_rate_schedule: str = 'linear',
+                                    n_warmup: int = 20) -> np.ndarray:
         """
         Calculates the linear decay schedule for the learning_rate
         :param total_timesteps: total number of timesteps for the RL training.
         :return: np array of learning_rate as a function of time step
         """
-        learning_decay = np.linspace(
-            self.learning_rate[0], self.learning_rate[1], total_timesteps)
+        if learning_rate_schedule == 'linear':
+            learning_decay = np.ones(total_timesteps) * self.learning_rate[0]
+            n_decay = total_timesteps - n_warmup
+            learning_decay[n_warmup:] = np.linspace(
+                self.learning_rate[0], self.learning_rate[1], n_decay)
+        elif learning_rate_schedule == 'sqrt':
+            learning_decay = np.array([
+                self.learning_rate[0]/math.sqrt(max(i, n_warmup))
+                for i in range(total_timesteps)])
+        else:
+            raise NotImplementedError('Learning rate schedule not availble.')
+
         return learning_decay
 
 
@@ -484,5 +502,6 @@ def train_and_evaluate_agent(
 
     policy_optimality = None
     if calc_optimality:
-        policy_optimality = calculate_policy_optimality(env, states_q, best_action)
+        policy_optimality = calculate_policy_optimality(
+            env, states_q, best_action)
     return agent, policy_optimality

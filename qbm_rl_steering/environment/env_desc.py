@@ -252,11 +252,11 @@ class TargetSteeringEnv(gym.Env):
         :param reward: input reward
         :return discretized simplified reward
         """
-        if reward > self.reward_threshold:
-            reward = 100.
-        else:
-            reward = 0.
-        # reward = -(1. - reward)
+        # if reward > self.reward_threshold:
+        #     reward = 100.
+        # else:
+        #     reward = 0.
+        reward = -100. * (1. - reward)
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:
