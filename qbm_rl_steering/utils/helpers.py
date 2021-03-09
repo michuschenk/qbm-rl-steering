@@ -223,7 +223,7 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
     :param fig_title: figure title """
     episode_count = 0
     env.clear_log()
-    obs = env.reset()
+    obs = env.reset(init_outside_thresh=True)
 
     pbar = tqdm(total=n_episodes, position=2, leave=True, desc='Evaluation',
                 disable=(not make_plot))
@@ -231,7 +231,7 @@ def evaluate_agent(env: TargetSteeringEnv, agent: DQN,
         action, _ = agent.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(int(action))
         if done:
-            obs = env.reset()
+            obs = env.reset(init_outside_thresh=True)
             episode_count += 1
             pbar.update(1)
     pbar.close()

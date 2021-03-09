@@ -182,7 +182,8 @@ class TargetSteeringEnv(gym.Env):
 
         return self.state, reward, done, {}
 
-    def reset(self, init_state: float = None) -> np.ndarray:
+    def reset(self, init_state: float = None,
+              init_outside_thresh: bool = False) -> np.ndarray:
         """ Reset the environment. Initialize self.mssb_angle as a multiple of
         self.mssb_delta, get the initial state, and reset logger. This method
         gets called e.g. at the end of an episode.
@@ -190,8 +191,15 @@ class TargetSteeringEnv(gym.Env):
         if init_state is None:
             # Initialize mssb_angle within self.mssb_angle_min and
             # self.mssb_angle_max
-            self.mssb_angle = np.random.uniform(
-                low=self.mssb_angle_min, high=self.mssb_angle_max)
+            r_init = 1.1*self.reward_threshold
+            while r_init > self.reward_threshold:
+                self.mssb_angle = np.random.uniform(
+                    low=self.mssb_angle_min, high=self.mssb_angle_max)
+                x_init, r_init = self.get_pos_at_bpm_target(self.mssb_angle)
+                # For evaluation we prefer to only have episodes that are
+                # initialized below threshold
+                if not init_outside_thresh:
+                    break
         else:
             # If init_state is set, we have to calc. the mssb_angle that puts
             # env in that state (that's a bit messy ...)
@@ -256,7 +264,10 @@ class TargetSteeringEnv(gym.Env):
         #     reward = 100.
         # else:
         #     reward = 0.
-        reward = -100. * (1. - reward)
+        if reward > self.reward_threshold:
+            reward = 50
+        else:
+            reward = -100. * (1. - reward)
         return reward
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:
