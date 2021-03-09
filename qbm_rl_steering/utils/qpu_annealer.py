@@ -80,6 +80,7 @@ class QPU:
             Q=qubo_dict, num_reads=num_reads,
             beta=self.beta_final, postprocess='SAMPLING',
             anneal_schedule=((0., 0.), (20., 1.)),
+            anneal_offsets=[-0.1]*self.n_nodes,
             readout_thermalization=0,
             reduce_intersample_correlation=True,
             answer_mode='raw'
