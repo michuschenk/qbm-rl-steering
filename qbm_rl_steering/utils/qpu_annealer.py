@@ -79,7 +79,7 @@ class QPU:
         spin_configurations = list(self.annealer.sample_qubo(
             Q=qubo_dict, num_reads=num_reads,
             beta=self.beta_final, postprocess='SAMPLING',
-            anneal_schedule=((0., 0.), (20., 0.97)),
+            anneal_schedule=((0., 0.), (20., 1.)),
             readout_thermalization=0,
             reduce_intersample_correlation=True,
             answer_mode='raw'
