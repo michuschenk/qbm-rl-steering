@@ -9,8 +9,12 @@ import tensorflow.keras as K
 from tensorflow.python.framework.ops import disable_eager_execution
 disable_eager_execution()
 
-import matplotlib
-matplotlib.use('qt5agg')
+try:
+    import matplotlib
+    matplotlib.use('qt5agg')
+except ImportError as err:
+    print(err)
+
 
 class Memory:
     """A FIFO experiene replay buffer.
@@ -173,31 +177,36 @@ class ClassicACAgent(object):
 
 import gym
 #from cern_awake_env.simulation import SimulationEnv
-from envs import env_awake_steering_simulated as awake_sim
+# from envs import env_awake_steering_simulated as awake_sim
+from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 if __name__ == "__main__":
 
-    GAMMA = 0.99
-    EPOCHS = 10
-    MAX_EPISODE_LENGTH = 50
+    GAMMA = 0.85
+    EPOCHS = 50
+    MAX_EPISODE_LENGTH = 40
     START_STEPS = 10
     INITIAL_REW = 0
 
-    env =  awake_sim.e_trajectory_simENV()
-    env.action_scale = 3e-4
-    env.threshold = -0.16
+    env = TargetSteeringEnv()
+    env.action_scale = 1e-5
 
+    agent = ClassicACAgent(
+        env.observation_space.shape, env.action_space.shape[0],
+        max(env.action_space.high))
 
-    agent = ClassicACAgent(env.observation_space.shape,env.action_space.shape[0],max(env.action_space.high))
+    state, reward, done, ep_rew, ep_len, ep_cnt = env.reset(), INITIAL_REW, \
+                                                  False, [[]], 0, 0
 
-    state, reward, done, ep_rew, ep_len, ep_cnt = env.reset(),INITIAL_REW, False, [[]], 0, 0
-    ep_rew[-1].append((-1.)*np.sqrt(np.mean(np.square(state))))
+    # Calculate reward in current state
+    _, intensity = env.get_pos_at_bpm_target(env.mssb_angle)
+    ep_rew[-1].append(env.get_reward(intensity))
     total_steps = MAX_EPISODE_LENGTH * EPOCHS
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
 
         if t > START_STEPS:
-            action = agent.get_action(state,episode=1)#len(ep_rew))
+            action = agent.get_action(state, episode=1)
             action = np.squeeze(action)
         else:
             action = env.action_space.sample()
@@ -208,37 +217,37 @@ if __name__ == "__main__":
         ep_rew[-1].append(reward) #keep adding to the last element till done
         ep_len += 1
 
-
         #print(done)
         done = False if ep_len==MAX_EPISODE_LENGTH else done
 
         # Store experience to replay buffer
-        agent.store(state,action,reward,next_state,done)
-
+        agent.store(state, action, reward, next_state, done)
 
         state = next_state
 
         if done or (ep_len == MAX_EPISODE_LENGTH):
             ep_cnt += 1
             if True: #ep_cnt % RENDER_EVERY == 0:
-                print(f"Episode: {len(ep_rew)-1}, Reward: {ep_rew[-1][-1]}, Length: {len(ep_rew[-1])}")
+                print(f"Episode: {len(ep_rew)-1}, Reward: {ep_rew[-1][-1]}, "
+                      f"Length: {len(ep_rew[-1])}")
             ep_rew.append([])
 
             for _ in range(ep_len):
                 agent.train()
 
             state, reward, done, ep_ret, ep_len = env.reset(), INITIAL_REW, False, 0, 0
-            ep_rew[-1].append((-1.)*np.sqrt(np.mean(np.square(state))))
+
+            _, intensity = env.get_pos_at_bpm_target(env.mssb_angle)
+            ep_rew[-1].append(env.get_reward(intensity))
 
     init_rewards = []
     rewards = []
     reward_lengths = []
     for episode in ep_rew:
-        if(len(episode)>0):
+        if(len(episode) > 0):
             rewards.append(episode[-1])
             init_rewards.append(episode[0])
             reward_lengths.append(len(episode)-1)
-
 
     fig, axs = plt.subplots(2, 1, constrained_layout=True)
     ax = axs[0]
