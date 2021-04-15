@@ -15,6 +15,8 @@ try:
 except ImportError as err:
     print(err)
 
+from qbm_rl_steering.utils.helpers import plot_log
+
 
 class Memory:
     """A FIFO experiene replay buffer.
@@ -42,14 +44,14 @@ class Memory:
         return self.states[idxs], self.actions[idxs], self.rewards[idxs], self.next_states[idxs], self.dones[idxs]
 
 class ClassicACAgent(object):
-    def __init__(self, state_dim, action_n, act_limit):
+    def __init__(self, state_dim, action_n, act_limit, GAMMA):
         # env intel
         self.action_n = action_n
         self.state_dim = state_dim
         self.state_n = state_dim[0]
         # constants
         self.ACT_LIMIT = act_limit  # requiered for clipping prediciton aciton
-        self.GAMMA = 0.99  # discounted reward factor
+        self.GAMMA = GAMMA  # discounted reward factor
         self.TAU = 1  # soft update factor
         self.BUFFER_SIZE = int(1e6)
         self.BATCH_SIZE = 50  # training batch size.
@@ -89,7 +91,7 @@ class ClassicACAgent(object):
         q =self.critic([y_true,y_pred, self.dummy_Q_target_prediction_input, self.dummy_dones_input])
         return -K.backend.mean(q)
 
-    def get_action(self, states, noise=None,episode = 1):
+    def get_action(self, states, noise=None, episode=1):
 
         if noise is None: noise = self.ACT_NOISE_SCALE
         if len(states.shape) == 1: states = states.reshape(1, -1)
@@ -103,7 +105,6 @@ class ClassicACAgent(object):
         return self.actor_target.predict_on_batch(states)
 
     def train_actor(self, states, actions):
-
         self.actor.train_on_batch(states, states)#Q_predictions)
 
 
@@ -182,17 +183,15 @@ from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
 if __name__ == "__main__":
 
     GAMMA = 0.85
-    EPOCHS = 50
-    MAX_EPISODE_LENGTH = 40
+    EPOCHS = 16
+    MAX_EPISODE_LENGTH = 10
     START_STEPS = 10
     INITIAL_REW = 0
 
-    env = TargetSteeringEnv()
-    env.action_scale = 1e-5
-
+    env = TargetSteeringEnv(max_steps_per_episode=MAX_EPISODE_LENGTH)
     agent = ClassicACAgent(
         env.observation_space.shape, env.action_space.shape[0],
-        max(env.action_space.high))
+        max(env.action_space.high), GAMMA)
 
     state, reward, done, ep_rew, ep_len, ep_cnt = env.reset(), INITIAL_REW, \
                                                   False, [[]], 0, 0
@@ -235,7 +234,8 @@ if __name__ == "__main__":
             for _ in range(ep_len):
                 agent.train()
 
-            state, reward, done, ep_ret, ep_len = env.reset(), INITIAL_REW, False, 0, 0
+            state, reward, done, ep_ret, ep_len = (
+                env.reset(), INITIAL_REW, False, 0, 0)
 
             _, intensity = env.get_pos_at_bpm_target(env.mssb_angle)
             ep_rew[-1].append(env.get_reward(intensity))
@@ -243,17 +243,42 @@ if __name__ == "__main__":
     init_rewards = []
     rewards = []
     reward_lengths = []
-    for episode in ep_rew:
+    for episode in ep_rew[:-1]:
         if(len(episode) > 0):
             rewards.append(episode[-1])
             init_rewards.append(episode[0])
             reward_lengths.append(len(episode)-1)
+    print('Total number of interactions:', np.sum(reward_lengths))
 
-    fig, axs = plt.subplots(2, 1, constrained_layout=True)
-    ax = axs[0]
-    ax.plot(reward_lengths)
+    plot_log(env, fig_title='Training')
+    # fig, axs = plt.subplots(2, 1, constrained_layout=True, figsize=(8, 6))
+    # axs[0].plot(reward_lengths)
+    # axs[0].axhline(env.max_steps_per_episode, c='k', ls='-',
+    #                label='Max. # steps')
+    # axs[0].set_ylabel('# steps per episode')
+    # axs[0].set_ylim(0, env.max_steps_per_episode + 0.5)
+    # axs[0].legend(loc='upper right')
+    #
+    # axs[1].plot(init_rewards, c='r', marker='.', label='initial')
+    # axs[1].plot(rewards, c='forestgreen', marker='x', label='final')
+    # axs[1].legend(loc='lower right')
+    # axs[1].set_xlabel('Episode')
+    # axs[1].set_ylabel('Reward')
+    # plt.show()
 
-    ax = axs[1]
-    ax.plot(init_rewards)
-    ax.plot(rewards)
-    plt.show()
+
+    # Agent evaluation
+    n_episodes_eval = 50
+    episode_counter = 0
+
+    env = TargetSteeringEnv(max_steps_per_episode=MAX_EPISODE_LENGTH)
+    while episode_counter < n_episodes_eval:
+        state = env.reset(init_outside_threshold=True)
+        while True:
+            a = agent.get_action(state, noise=0)
+            state, reward, done, _ = env.step(a)
+            if done:
+                episode_counter += 1
+                break
+
+    plot_log(env, fig_title='Evaluation')

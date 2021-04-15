@@ -45,8 +45,7 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 
 class TargetSteeringEnv(gym.Env):
-    def __init__(self, max_steps_per_episode: int = 20,
-                 action_scale: float = 1e-5) -> None:
+    def __init__(self, max_steps_per_episode: int = 20) -> None:
         """
         :param max_steps_per_episode: max number of steps we allow agent to
         'explore' per episode. After this number of steps, episode is aborted.
@@ -67,7 +66,8 @@ class TargetSteeringEnv(gym.Env):
         self.mssb_angle_max = 140e-6  # 140e-6  # (rad)
         self.mssb_angle_min = -self.mssb_angle_max  # (rad)
         self.mssb_angle_margin = 30e-6
-        self.action_scale = action_scale
+        self.action_scale = (2. / (self.mssb_angle_max - self.mssb_angle_min +
+                                   2 * self.mssb_angle_margin))
 
         # BEAM POSITION
         # x0: position at origin, i.e. before entering MSSB
@@ -76,18 +76,24 @@ class TargetSteeringEnv(gym.Env):
         # observation_space given mssb_angle_min, mssb_angle_max
         self.x0 = 0.
         self.state = None  # not set, will be init. with self.reset()
-        x_max, _ = self.get_pos_at_bpm_target(self.mssb_angle_max)
-        x_min, _ = self.get_pos_at_bpm_target(self.mssb_angle_min)
+        x_max_wMargin, _ = self.get_pos_at_bpm_target(self.mssb_angle_max +
+                                                      self.mssb_angle_margin)
+        x_min_wMargin, _ = self.get_pos_at_bpm_target(self.mssb_angle_min -
+                                                      self.mssb_angle_margin)
+        self.state_scale = 2. / (x_max_wMargin - x_min_wMargin)
 
         # GYM REQUIREMENTS
         # Define continuous action space
         self.action_space = gym.spaces.Box(
-            low=np.array([self.mssb_angle_min - self.mssb_angle_margin]),
-            high=np.array([self.mssb_angle_max + self.mssb_angle_margin]))
+            low=np.array([self.mssb_angle_min - self.mssb_angle_margin]) *
+                self.action_scale,
+            high=np.array([self.mssb_angle_max + self.mssb_angle_margin]) *
+                self.action_scale)
 
         # Define continuous observation space
         self.observation_space = gym.spaces.Box(
-            low=np.array([1.05*x_min]), high=np.array([1.05*x_max]))
+            low=np.array([x_min_wMargin * self.state_scale]),
+            high=np.array([x_max_wMargin * self.state_scale]))
 
         # For cancellation when beyond certain number of steps in an episode
         self.step_count = None
@@ -108,11 +114,10 @@ class TargetSteeringEnv(gym.Env):
 
         # Apply action and update environment (get new position at BPM and
         # convert into a binary vector)
-        action *= self.action_scale
-        total_angle = self.mssb_angle + action
+        total_angle = self.mssb_angle + action / self.action_scale
         x_new, intensity = self.get_pos_at_bpm_target(total_angle)
 
-        self.state = np.array([x_new])
+        self.state = np.array([x_new * self.state_scale])
         self.mssb_angle = total_angle
 
         self.step_count += 1
@@ -121,8 +126,8 @@ class TargetSteeringEnv(gym.Env):
         done = bool(
             self.step_count > self.max_steps_per_episode
             or intensity > self.intensity_threshold
-            or x_new > self.observation_space.high
-            or x_new < self.observation_space.low
+            or x_new > (self.observation_space.high / self.state_scale)
+            or x_new < (self.observation_space.low / self.state_scale)
         )
 
         # Keep track of reason for episode abort
@@ -131,8 +136,8 @@ class TargetSteeringEnv(gym.Env):
             done_reason = 0
         elif intensity > self.intensity_threshold:
             done_reason = 1
-        elif (x_new > self.observation_space.high or
-              x_new < self.observation_space.low):
+        elif (x_new > (self.observation_space.high / self.state_scale) or
+              x_new < (self.observation_space.low / self.state_scale)):
             done_reason = 2
         else:
             pass
@@ -141,7 +146,7 @@ class TargetSteeringEnv(gym.Env):
 
         # Interaction log
         self.interaction_logger.log_episode.append(
-            [x, action, reward, x_new, done, done_reason])
+            [x, action / self.action_scale, reward, x_new, done, done_reason])
         if done:
             self.interaction_logger.log_all.append(
                 self.interaction_logger.log_episode)
@@ -203,12 +208,16 @@ class TargetSteeringEnv(gym.Env):
         else:
             self.mssb_angle = self._init_specific_state(init_state)
 
-        x_init, _ = self.get_pos_at_bpm_target(self.mssb_angle)
-        self.state = np.array([x_init])
+        x_init, init_intensity = self.get_pos_at_bpm_target(self.mssb_angle)
+        self.state = np.array([x_init * self.state_scale])
 
         # Logging
         self.step_count = 0
         self.interaction_logger.episode_reset()
+
+        init_reward = self.get_reward(init_intensity)
+        self.interaction_logger.log_episode.append(
+            [x_init, None, init_reward, None, False, None])
 
         return self.state
 

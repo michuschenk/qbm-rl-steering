@@ -125,7 +125,7 @@ def run_random_trajectories(env: TargetSteeringEnv, n_episodes: int = 20,
             episode_count += 1
 
     # Extract all data and convert binary states to floats
-    data, n_steps = env.logger.extract_all_data()
+    data, n_steps = env.interaction_logger.extract_all_data()
     state_float = []
     for s in data['state']:
         state_float.append(env.make_binary_state_float(s))
@@ -160,7 +160,7 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '',
     stored in environment logger .
     :param env: OpenAI gym-based environment of transfer line
     :param fig_title: figure title """
-    episodic_data = env.logger.extract_episodic_data()
+    episodic_data = env.interaction_logger.extract_episodic_data()
 
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(7, 7))
     fig.suptitle(fig_title)
@@ -168,10 +168,13 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '',
     # Episode abort reason
     axs[0].plot(episodic_data['episode_count'], episodic_data['done_reason'],
                 c='tab:blue', ls='None', marker='.', ms=4)
-    axs[0].set_yticks([i for i in env.logger.done_reason_map.keys()])
+    axs[0].set_yticks([
+        i for i in env.interaction_logger.done_reason_map.keys()])
     axs[0].set_yticklabels(
-        [s for s in env.logger.done_reason_map.values()], rotation=45)
-    axs[0].set_ylim(-0.5, max(env.logger.done_reason_map.keys()) + 0.5)
+        [s for s in env.interaction_logger.done_reason_map.values()],
+        rotation=45)
+    axs[0].set_ylim(
+        -0.5, max(env.interaction_logger.done_reason_map.keys()) + 0.5)
 
     # Episode length (for statistics remove zero entries)
     msk = episodic_data['episode_length'] == 0
@@ -187,9 +190,9 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '',
 
     # Reward
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_initial'],
-                'tab:red', ls='None', marker='o', ms=4, label='Initial')
+                'tab:red', ls='-', marker='o', ms=4, label='Initial')
     axs[2].plot(episodic_data['episode_count'], episodic_data['reward_final'],
-                c='tab:green', ls='None', marker='x', ms=4, mew=1,
+                c='tab:green', ls='-', marker='x', ms=4, mew=1,
                 label='Final')
 
     # Y-axis scaling
@@ -204,8 +207,8 @@ def plot_log(env: TargetSteeringEnv, fig_title: str = '',
     axs[1].set_ylabel('# steps per episode')
     axs[2].set_ylabel('Reward')
 
-    axs[1].legend(loc='upper left', fontsize=10)
-    axs[2].legend(loc='lower left', fontsize=10)
+    axs[1].legend(loc='upper right', fontsize=10)
+    axs[2].legend(loc='lower right', fontsize=10)
     axs[-1].set_xlabel('Episode')
     plt.tight_layout()
     plt.savefig(save_name, dpi=300)
@@ -249,7 +252,7 @@ def calculate_performance_metric(env: TargetSteeringEnv) -> (float, float):
     :param env: OpenAI gym-based environment of transfer line
     :return metric value (as a single float)
     """
-    episodic_data = env.logger.extract_episodic_data()
+    episodic_data = env.interaction_logger.extract_episodic_data()
 
     upper_bound_optimal = env.get_max_n_steps_optimal_behaviour()
     msk_steps = episodic_data['episode_length'] <= upper_bound_optimal
