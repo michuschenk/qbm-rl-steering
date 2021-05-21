@@ -43,8 +43,10 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
     :return normalized state-action vector == visible nodes of QBM
     """
     # TODO: fix documentation
+    # print('action in visible nodes', action)
     state_normalized = 2. * state / (state_space.high - state_space.low)
     action_normalized = 2. * action / (action_space.high - action_space.low)
+    # print('action_normalized in visible nodes', action_normalized)
     visible_nodes = np.array(list(state_normalized) + list(action_normalized))
     return visible_nodes
 
@@ -312,6 +314,21 @@ class QFunction(object):
         # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
         return w_hh, w_vh
 
+    def calculate_q_value_on_batch(self, states, actions):
+        q_values = []
+        spin_configurations = []
+        visible_nodes = []
+        for i in range(len(states)):
+            q, sc, vn = self.calculate_q_value(states[i], actions[i])
+            q_values.append(q)
+            spin_configurations.append(sc)
+            visible_nodes.append(vn)
+        q_values = np.array(q_values)
+        spin_configurations = np.array(spin_configurations)
+        visible_nodes = np.array(visible_nodes)
+
+        return q_values, spin_configurations, visible_nodes
+
     def calculate_q_value(self, state: np.ndarray, action: np.ndarray) -> \
             Tuple[float, np.ndarray, np.ndarray]:
         """
@@ -326,6 +343,7 @@ class QFunction(object):
         visible_nodes = get_visible_nodes_array(
             state=state, action=action,
             state_space=self.state_space, action_space=self.action_space)
+        # print('visible_nodes', visible_nodes)
         qubo_dict = create_general_qubo_dict(
             self.w_hh, self.w_vh, visible_nodes)
 
@@ -371,9 +389,16 @@ class QFunction(object):
         # This term is the same for both weight updates w_hh and w_vh
         update_factor = learning_rate * (
                 reward + self.small_gamma * future_q - current_q)
+        # print('reward', reward)
+        # print('future_q', future_q)
+        # print('current_q', current_q)
+
+        # print('update_factor', update_factor)
+        # print('visible_nodes', visible_nodes)
 
         # Update of w_vh, Eq. (11)
         h_avg = np.mean(np.mean(spin_configurations, axis=0), axis=0)
+        # print('h_avg', h_avg)
         for v, h in self.w_vh.keys():
             self.w_vh[(v, h)] += update_factor * visible_nodes[v] * h_avg[h]
 
@@ -412,7 +437,10 @@ class Memory:
         self.size = min(self.size + 1, self.max_size)
 
     def get_sample(self, batch_size=32):
-        idxs = np.random.randint(0, self.size, size=batch_size)
+        if self.size < batch_size:
+            idxs = np.random.randint(0, self.size, size=self.size)
+        else:
+            idxs = np.random.randint(0, self.size, size=batch_size)
         return self.states[idxs], self.actions[idxs], self.rewards[idxs], self.next_states[idxs], self.dones[idxs]
 
 class ClassicACAgent(object):
@@ -423,16 +451,16 @@ class ClassicACAgent(object):
         self.state_dim = env.observation_space.shape
         self.state_n = self.state_dim[0]
         # constants
-        self.ACT_LIMIT = max(env.action_space.high)  # requiered for clipping prediciton aciton
+        self.ACT_LIMIT = max(env.action_space.high)  # required for clipping prediciton aciton
         self.GAMMA = GAMMA  # discounted reward factor
-        self.TAU = 1  # soft update factor
+        self.TAU = 0.1  # soft update factor
         self.BUFFER_SIZE = int(1e6)
-        self.BATCH_SIZE = 50  # training batch size.
+        self.BATCH_SIZE = 10  # training batch size.
         self.ACT_NOISE_SCALE = 0.2
 
         # QBM related stuff
         self.n_annealing_steps = 100
-        self.n_meas_for_average = 100
+        self.n_meas_for_average = 50
         self.learning_rate = 1e-3
 
         # create networks
@@ -457,7 +485,8 @@ class ClassicACAgent(object):
             decay_steps=1000,
             decay_rate=0.96,
             staircase=True)
-        model.compile(optimizer=K.optimizers.Adam(learning_rate=0.001), loss=self._ddpg_actor_loss)
+        model.compile(optimizer=K.optimizers.Adam(learning_rate=0.001),
+                      loss=self._ddpg_actor_loss)
         model.summary()
         return model
 
@@ -474,18 +503,18 @@ class ClassicACAgent(object):
         return self.actor_target.predict_on_batch(states)
 
     def train_actor(self, states, actions):
-        self.actor.train_on_batch(states, states) #Q_predictions)
+        self.actor.train_on_batch(states, states) # Q_predictions)
 
     def _gen_critic_network(self):
         # Define Q functions and their updates
         kwargs_q_func = dict(
             sampler_type='SQA',
-            state_space=env.observation_space,
-            action_space=env.action_space,
+            state_space=self.env.observation_space,
+            action_space=self.env.action_space,
             small_gamma=self.GAMMA,
             n_graph_nodes=16,
             n_replicas=1,
-            big_gamma=0., beta=2.,
+            big_gamma=(20., 0.), beta=2.,
             n_annealing_steps=self.n_annealing_steps,
             n_meas_for_average=self.n_meas_for_average,
             kwargs_qpu={})
@@ -502,28 +531,37 @@ class ClassicACAgent(object):
     def q_custom_gradient(self, y_true, y_pred):
         def get_q_value(y_true, y_pred):
             q_value, _, _ = (
-                self.critic.calculate_q_value(y_true, y_pred))
+                self.critic.calculate_q_value_on_batch(y_true, y_pred))
             dq_over_dstate = self.get_state_derivative(y_true, y_pred)
             dq_over_daction = self.get_action_derivative(y_true, y_pred)
-            return q_value, dq_over_dstate, dq_over_daction  # first is function, second is gradient
+
+            return np.float32(q_value), np.float32(dq_over_dstate),\
+                   np.float32(dq_over_daction)
+            # first is function, second is gradient
 
         z, dz_over_dstate, dz_over_daction = tf.numpy_function(
             get_q_value, [y_true, y_pred], [tf.float32, tf.float32, tf.float32])
 
         def grad(dy):
-            return dy * dz_over_dstate, dy * dz_over_daction
-
+            return (tf.dtypes.cast(dy * dz_over_dstate, dtype=tf.float32),
+                    tf.dtypes.cast(dy * dz_over_daction, dtype=tf.float32))
         return z, grad
 
-    def get_state_derivative(self, y_true, y_pred, epsilon=1e-4):
-        q0 = self.critic.calculate_q_value(y_true, y_pred)
-        qeps = self.critic.calculate_q_value(y_true + epsilon, y_pred)
-        return (qeps - q0) / epsilon
+    def get_state_derivative(self, y_true, y_pred, epsilon=0.04):
+        # q0, _, _ = self.critic.calculate_q_value(y_true, y_pred)
+        qeps_plus, _, _ = self.critic.calculate_q_value_on_batch(
+            y_true + epsilon, y_pred)
+        qeps_minus, _, _ = self.critic.calculate_q_value_on_batch(
+            y_true - epsilon, y_pred)
+        return np.float_((qeps_plus - qeps_minus) / (2*epsilon))
 
-    def get_action_derivative(self, y_true, y_pred, epsilon=1e-4):
-        q0 = self.critic.calculate_q_value(y_true, y_pred)
-        qeps = self.critic.calculate_q_value(y_true, y_pred + epsilon)
-        return (qeps - q0) / epsilon
+    def get_action_derivative(self, y_true, y_pred, epsilon=0.04):
+        # q0, _, _ = self.critic.calculate_q_value(y_true, y_pred)
+        qeps_plus, _, _ = self.critic.calculate_q_value_on_batch(
+            y_true, y_pred + epsilon)
+        qeps_minus, _, _ = self.critic.calculate_q_value_on_batch(
+            y_true, y_pred - epsilon)
+        return np.float_((qeps_plus - qeps_minus) / (2*epsilon))
 
     def train_critic(self, states, next_states, actions, rewards, dones):
         # Training the QBM
@@ -533,7 +571,7 @@ class ClassicACAgent(object):
         #     n_replay_batch = len(self.replay_buffer)
         # replay_samples = random.sample(self.replay_buffer, n_replay_batch)
 
-        for jj in np.arange(states):
+        for jj in np.arange(len(states)):
             # Act only greedily here: should be OK to do that always
             # because we collect our experiences according to an
             # epsilon-greedy policy
@@ -547,6 +585,7 @@ class ClassicACAgent(object):
             # actually taking the action (to take actions in env.,
             # we don't follow purely greedy action).
             next_action = self.get_target_action(next_states[jj])
+            # print('next action', next_action)
             next_q_value, spin_configurations, visible_nodes = (
                 self.critic_target.calculate_q_value(
                     state=next_states[jj], action=next_action))
@@ -555,7 +594,7 @@ class ClassicACAgent(object):
             # TODO: change learning rate to fixed value...
             self.critic.update_weights(
                 spin_configs, visible_nodes, q_value, next_q_value,
-                rewards[jj], learning_rate=self.learning_rate)
+                rewards[jj], learning_rate=5e-3)
 
     def _soft_update_actor_and_critic(self):
         # Critic soft update:
@@ -585,6 +624,10 @@ class ClassicACAgent(object):
         states, actions, rewards, next_states, dones = self.memory.get_sample(
             batch_size=self.BATCH_SIZE)
         self.train_critic(states, next_states, actions, rewards, dones)
+        # print('states', states)
+        # print('actions', actions)
+        # print('memory buffer', states.shape)
+        # print('states in memory', states)
         self.train_actor(states, actions)
         self._soft_update_actor_and_critic()
 
@@ -600,6 +643,53 @@ if __name__ == "__main__":
     env = TargetSteeringEnv(max_steps_per_episode=MAX_EPISODE_LENGTH)
     agent = ClassicACAgent(GAMMA, env)
 
+    # s = np.linspace(-1, 1, 15)
+    # a = np.linspace(-1, 1, 13)
+    # q = np.zeros((len(s), len(a)))
+    # dqda = np.zeros((len(s), len(a)))
+    # dqds = np.zeros((len(s), len(a)))
+    # for i, s_ in enumerate(s):
+    #     for j, a_ in enumerate(a):
+    #         q[i, j], _, _ = agent.critic.calculate_q_value(s_, a_)
+    #         dqda[i, j] = agent.get_action_derivative(s_, a_, epsilon=0.4)
+    #         dqds[i, j] = agent.get_state_derivative(s_, a_, epsilon=0.4)
+    #
+    # fig, axs = plt.subplots(3, 1, sharex=True, sharey=True, figsize=(8, 10))
+    # imq = axs[0].pcolormesh(s, a, q.T, shading='auto')
+    # fig.colorbar(imq, ax=axs[0])
+    # axs[0].set_title('Q')
+    # axs[0].set_ylabel('action')
+    #
+    # imdqda = axs[1].pcolormesh(s, a, dqda.T, shading='auto')
+    # fig.colorbar(imdqda, ax=axs[1])
+    # axs[1].set_title('dq / da')
+    # axs[1].set_ylabel('action')
+    #
+    # imdqds = axs[2].pcolormesh(s, a, dqds.T, shading='auto')
+    # fig.colorbar(imdqds, ax=axs[2])
+    # axs[2].set_title('dq / ds')
+    # axs[2].set_xlabel('state')
+    # axs[2].set_ylabel('action')
+    # plt.show()
+    #
+    # plt.figure()
+    # plt.suptitle('q vs dqda')
+    # plt.plot(a, q[6, :], label='Q')
+    # plt.plot(a, dqda[6, :], label='dQ/da')
+    # plt.legend()
+    # plt.xlabel('action')
+    # plt.ylabel('Q and dq/da resp.')
+    # plt.show()
+    #
+    # plt.figure()
+    # plt.suptitle('q vs dqds')
+    # plt.plot(s, q[:, 5], label='Q')
+    # plt.plot(s, dqds[:, 5], label='dQ/ds')
+    # plt.legend()
+    # plt.xlabel('state')
+    # plt.ylabel('Q and dq/ds resp.')
+    # plt.show()
+
     state, reward, done, ep_rew, ep_len, ep_cnt = env.reset(), INITIAL_REW, \
                                                   False, [[]], 0, 0
 
@@ -609,15 +699,26 @@ if __name__ == "__main__":
     total_steps = MAX_EPISODE_LENGTH * EPOCHS
 
     # Main loop: collect experience in env and update/log each epoch
+    to_exploitation = False
     for t in range(total_steps):
 
+        # print('actor weights:', agent.actor.get_weights())
+        # print('n nans actor weights:', np.sum(np.isnan(np.array(
+        #       agent.actor.get_weights()).flatten())))
+
         if t > START_STEPS:
+            # print('\n\n\n!!!!!!!! END OF RANDOM SAMPLING !!!!!!!!\n\n\n')
+            if not to_exploitation:
+                print('Now exploiting ...')
+                to_exploitation = True
             action = agent.get_action(state, episode=1)
             action = np.squeeze(action)
         else:
+            # print('\n!!!!!!!! USING RANDOM SAMPLING !!!!!!!!\n')
             action = env.action_space.sample()
 
         # Step the env
+        # print('action before env.step', action)
         next_state, reward, done, _ = env.step(action)
         #print("reward ",reward,done)
         ep_rew[-1].append(reward) #keep adding to the last element till done

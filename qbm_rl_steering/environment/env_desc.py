@@ -237,6 +237,10 @@ class TargetSteeringEnv(gym.Env):
                 (x - beam_position) ** 2 / (-2 * sigma ** 2)),
             -3*sigma, 3*sigma)
 
+        if np.isnan(self.intensity_on_target[0]):
+            self.intensity_on_target = np.array(self.intensity_on_target)
+            self.intensity_on_target[0] = 0.
+
         return self.intensity_on_target[0]
 
     def get_reward(self, intensity: float) -> float:
