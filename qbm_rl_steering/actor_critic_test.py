@@ -3,7 +3,7 @@ from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
 import matplotlib.pyplot as plt
 
-from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
+from qbm_rl_steering.environment.target_steering_1d import TargetSteeringEnv
 from stable_baselines3 import SAC
 
 env = TargetSteeringEnv()

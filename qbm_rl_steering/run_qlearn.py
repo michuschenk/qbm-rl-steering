@@ -2,10 +2,10 @@
 # TODO: group arguments using dicts...
 # TODO: implement double Q
 # TODO: implement replay buffer
-# TODO: parallel agents
+# TODO: parallel core
 
-from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-import qbm_rl_steering.agents.qbm_core as utl
+from qbm_rl_steering.environment.target_steering_1d import TargetSteeringEnv
+import qbm_rl_steering.core.qbm as utl
 
 import matplotlib.pyplot as plt
 import numpy as np

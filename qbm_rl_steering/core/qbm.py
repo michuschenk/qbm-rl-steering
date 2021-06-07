@@ -39,7 +39,6 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
     return visible_nodes
 
 
-
 def create_general_qubo_dict(
         w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray) -> Dict:
     """
@@ -312,7 +311,7 @@ class QFunction(object):
         for j in (tuple(range(4, 8)) + tuple(range(8, 12))):
             for i in range(
                     len(self.state_space.high),
-                    len(self.state_space.high + self.action_space.high)):
+                    len(self.state_space.high) + len(self.action_space.high)):
                 w_vh[(i, j)] = 2 * random.random() - 1
 
         # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
@@ -409,3 +408,55 @@ class QFunction(object):
             self.w_hh_history[k].append(self.w_hh[k])
         for k in self.w_vh.keys():
             self.w_vh_history[k].append(self.w_vh[k])
+
+
+# Derivative, numerical
+# s = np.linspace(-1, 1, 20)
+# a = np.linspace(-1, 1, 20)
+# q = np.zeros((len(s), len(a)))
+# dqda = np.zeros((len(s), len(a)))
+# dqds = np.zeros((len(s), len(a)))
+# for i, s_ in enumerate(s):
+#     for j, a_ in enumerate(a):
+#         a_ = np.atleast_1d(a_)
+#         s_ = np.atleast_1d(s_)
+#         q[i, j], _, _ = agent.critic.calculate_q_value(s_, a_)
+#         dqda[i, j] = agent.get_action_derivative(s_, a_, epsilon=0.5)
+#         dqds[i, j] = agent.get_state_derivative(s_, a_, epsilon=0.5)
+# fig, axs = plt.subplots(3, 1, sharex=True, sharey=True, figsize=(8, 10))
+# imq = axs[0].pcolormesh(s, a, q.T, shading='auto')
+# fig.colorbar(imq, ax=axs[0])
+# axs[0].set_title('Q')
+# axs[0].set_ylabel('action')
+#
+# imdqda = axs[1].pcolormesh(s, a, dqda.T, shading='auto')
+# axs[1].axvline(s[6], c='red')
+# fig.colorbar(imdqda, ax=axs[1])
+# axs[1].set_title('dq / da')
+# axs[1].set_ylabel('action')
+#
+# imdqds = axs[2].pcolormesh(s, a, dqds.T, shading='auto')
+# axs[2].axhline(a[5], c='red')
+# fig.colorbar(imdqds, ax=axs[2])
+# axs[2].set_title('dq / ds')
+# axs[2].set_xlabel('state')
+# axs[2].set_ylabel('action')
+# plt.show()
+#
+# plt.figure()
+# plt.suptitle('q vs dqda')
+# plt.plot(a, q[6, :], label='Q')
+# plt.plot(a, dqda[6, :], label='dQ/da')
+# plt.legend()
+# plt.xlabel('action')
+# plt.ylabel('Q and dq/da resp.')
+# plt.show()
+#
+# plt.figure()
+# plt.suptitle('q vs dqds')
+# plt.plot(s, q[:, 5], label='Q')
+# plt.plot(s, dqds[:, 5], label='dQ/ds')
+# plt.legend()
+# plt.xlabel('state')
+# plt.ylabel('Q and dq/ds resp.')
+# plt.show()
