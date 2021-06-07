@@ -1,5 +1,5 @@
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-import qbm_rl_steering.utils.qbmq_utils as utl
+import qbm_rl_steering.utils.qbm_core as utl
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -89,7 +89,7 @@ class QBMQN(object):
             act for act in range(self.env.action_space.n)]
 
         self.q_function = utl.QFunction(
-            annealer_type=annealer_type,
+            sampler_type=annealer_type,
             n_bits_observation_space=n_bits_observation_space,
             n_bits_action_space=n_bits_action_space,
             small_gamma=small_gamma,

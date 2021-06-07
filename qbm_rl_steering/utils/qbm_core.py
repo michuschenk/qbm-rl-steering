@@ -2,6 +2,7 @@ import math
 import random
 import numpy as np
 from typing import Dict, Tuple, Union
+import gym
 
 # SQAOD (simulated quantum annealing)
 try:
@@ -19,47 +20,41 @@ except ImportError:
 from qbm_rl_steering.utils.sa_annealer import SA
 
 
-def get_visible_nodes_array(state: np.ndarray, action: int,
-                            n_bits_action_space: int = 2) -> np.ndarray:
+def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
+                            state_space: gym.spaces.Box,
+                            action_space: gym.spaces.Box) -> np.ndarray:
     """
-    Take state (e.g. directly from environment, in binary encoding), and action
-    index (following env.action_map), and concatenate them to the
-    visible_nodes_tuple. Then convert all 0s to -1s to be compatible with the
-    spin states {-1, +1}.
-    :param state: state as binary-encoded vector {0, 1}, obtained directly from
-    the environment (either through .reset(), or .step()).
-    :param action: index of action as used in environment, see env.action_map
-    keys.
-    :param n_bits_action_space: number of bits used to encode the discrete
-    action space [given by ceil(log2(n_actions))].
-    :return binary state-action numpy array with entries {-1, +1}.
+    Normalize and concatenate state and action vectors to create state-action
+    input vector (== "visible nodes" of clamped QBM).
+    :param state: state as np.array from the environment (either through
+    .reset(), or .step()).
+    :param action: action as used in environment (continuous)
+    :param state_space: openAI gym state space
+    :param action_space: openAI gym action space
+    :return normalized state-action vector
     """
-    # Turn action index into binary vector
-    binary_fmt = f'0{n_bits_action_space}b'
-    action_binary = [int(i) for i in format(action, binary_fmt)]
-    visible_nodes = np.array(list(state) + action_binary)
-
-    # Turn all 0s in binary state-action vector into -1s
-    visible_nodes[visible_nodes == 0] = -1
+    state_normalized = 2. * state / (state_space.high - state_space.low)
+    action_normalized = 2. * action / (action_space.high - action_space.low)
+    visible_nodes = np.array(list(state_normalized) + list(action_normalized))
     return visible_nodes
+
 
 
 def create_general_qubo_dict(
         w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray) -> Dict:
     """
-    Creates a dictionary of the coupling weights of the graph. It corresponds
-    to an upper triangular matrix, where the self-coupling weights (linear
-    coefficients) are on the diagonal, i.e. (i, i) keys, and the quadratic
-    coefficients are on the off-diagonal, i.e. (i, j) keys with i < j. As the
-    visible nodes are clamped, they are incorporated into biases,
-    i.e. self-coupling weights of the hidden nodes they are connected to.
+    Creates dictionary of coupling weights of the graph. Corresponds to an
+    upper triangular matrix, where self-coupling weights (linear coefficients)
+    are on the diagonal, i.e. (i, i) keys, and the quadratic coefficients are
+    on the off-diagonal, i.e. (i, j) keys with i < j. As the visible nodes
+    are clamped, they are incorporated into biases, i.e. self-coupling
+    weights of the hidden nodes they are connected to.
     :param w_hh: Contains key pairs (i, j) where i < j and the values
     are the coupling weights between the hidden nodes i and j.
     :param w_vh: Contains key pairs (visible, hidden) and the values are the
     coupling weights between visible and hidden nodes.
     :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
-    binary vectors (with -1 and +1) of the states and action vectors
-    concatenated (length: n_bits_observation_space + n_bits_action_space).
+    the states and action vectors concatenated.
     :return Dictionary of the QUBO upper triangular Q-matrix that describes the
     quadratic equation to be minimized.
     """
@@ -177,33 +172,31 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
     """
     # Return the number of occurrences of unique spin configurations along
     # axis 0, i.e. along index of independent measurements
-    _, n_occurrences = np.unique(spin_configurations, axis=0,
-                                 return_counts=True)
+    _, n_occurrences = np.unique(
+        spin_configurations, axis=0, return_counts=True)
     mean_n_occurrences = n_occurrences / float(np.sum(n_occurrences))
     a_sum = np.sum(mean_n_occurrences * np.log10(mean_n_occurrences))
 
-    # print('Free energy', avg_eff_hamiltonian + a_sum / beta_final)
     return avg_eff_hamiltonian + a_sum / beta_final
 
 
 class QFunction(object):
-    def __init__(self, annealer_type: str, n_bits_observation_space: int,
-                 n_bits_action_space: int, small_gamma: float,
+    def __init__(self, sampler_type: str, state_space: gym.spaces.Box,
+                 action_space: gym.spaces.Box, small_gamma: float,
                  n_graph_nodes: int, n_replicas: int,
                  big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]],
                  n_annealing_steps: int, n_meas_for_average: int,
                  kwargs_qpu) -> None:
         """
-        Implementation of the Q function (state-action value function) using
-        an SQA method to update / train.
-        :param annealer_type: choose between simulated quantum annealing (SQA),
+        Implementation of the Q function (state-action value function).
+        :param sampler_type: choose between simulated quantum annealing (SQA),
         classical annealing (SA), or Quantum annealing on hardware (QPU) (use
         big_gamma = 0 with SA)
-        :param n_bits_observation_space: number of bits used to encode
-        observation space of environment
-        :param n_bits_action_space: number of bits required to encode the
-        actions that are possible in the given environment
+        :param state_space: gym state space as initialized in the openAI gym
+        environment (Box type).
+        :param action_space: gym action space as initialized in the openAI gym
+        environment (Box type).
         :param small_gamma: RL parameter, discount factor for
         cumulative future rewards.
         :param n_graph_nodes: number of nodes of the graph structure. E.g. for
@@ -224,16 +217,18 @@ class QFunction(object):
         :param kwargs_qpu: additional keyword arguments required for the
         initialization of the DWAVE QPU on Amazon Braket.
         """
-        if annealer_type == 'SQA':
-            self.annealer = SQA(
+        # TODO: adapt documentation
+
+        if sampler_type == 'SQA':
+            self.sampler = SQA(
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
                 n_nodes=n_graph_nodes)
-        elif annealer_type == 'SA':
-            self.annealer = SA(
+        elif sampler_type == 'SA':
+            self.sampler = SA(
                 beta=beta, big_gamma=big_gamma, n_replicas=n_replicas,
                 n_nodes=n_graph_nodes, n_annealing_steps=n_annealing_steps)
-        elif annealer_type == 'QPU':
-            self.annealer = QPU(
+        elif sampler_type == 'QPU':
+            self.sampler = QPU(
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
                 device=kwargs_qpu['aws_device'],
                 s3_location=kwargs_qpu['s3_location'])
@@ -241,7 +236,7 @@ class QFunction(object):
             raise ValueError("Annealer_type must be either 'SQA', 'SA', "
                              "or 'QPU'.")
 
-        self.annealer_type = annealer_type
+        self.sampler_type = sampler_type
 
         self.n_annealing_steps = n_annealing_steps
         self.n_meas_for_average = n_meas_for_average
@@ -249,11 +244,13 @@ class QFunction(object):
 
         self.small_gamma = small_gamma
 
-        self.n_bits_observation_space = n_bits_observation_space
-        self.n_bits_action_space = n_bits_action_space
+        # For normalization purposes
+        self.state_space = state_space
+        self.action_space = action_space
+
         self.w_hh, self.w_vh = self._initialise_weights()
 
-        # Keep track of the weights
+        # Keep track of how weights evolve
         self.w_hh_history, self.w_vh_history = {}, {}
         for k in self.w_hh.keys():
             self.w_hh_history[k] = []
@@ -302,7 +299,7 @@ class QFunction(object):
         # all of the blue nodes. This is n_bits_observation_space * 8 = 64
         # couplings (here).
         for j in (tuple(range(4)) + tuple(range(12, 16))):
-            for i in range(self.n_bits_observation_space):
+            for i in range(len(self.state_space.high)):
                 w_vh[(i, j)] = 2 * random.random() - 1
 
         # Dense connection between the action nodes (visible) and the RED hidden
@@ -314,32 +311,47 @@ class QFunction(object):
         # (here).
         for j in (tuple(range(4, 8)) + tuple(range(8, 12))):
             for i in range(
-                    self.n_bits_observation_space,
-                    self.n_bits_observation_space + self.n_bits_action_space):
+                    len(self.state_space.high),
+                    len(self.state_space.high + self.action_space.high)):
                 w_vh[(i, j)] = 2 * random.random() - 1
 
         # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
         return w_hh, w_vh
 
-    def calculate_q_value(self, state: np.ndarray, action: int) -> \
+    def calculate_q_value_on_batch(self, states, actions):
+        q_values = []
+        spin_configurations = []
+        visible_nodes = []
+        for i in range(len(states)):
+            q, sc, vn = self.calculate_q_value(states[i], actions[i])
+            q_values.append(q)
+            spin_configurations.append(sc)
+            visible_nodes.append(vn)
+        q_values = np.array(q_values)
+        spin_configurations = np.array(spin_configurations)
+        visible_nodes = np.array(visible_nodes)
+
+        return q_values, spin_configurations, visible_nodes
+
+    def calculate_q_value(self, state: np.ndarray, action: np.ndarray) -> \
             Tuple[float, np.ndarray, np.ndarray]:
         """
         Based on state and chosen action, calculate the free energy,
         spin_configurations and vis_iterable.
         :param state: state the environment is in (binary vector, directly
         obtained from either env.reset(), or env.step())
-        :param action: chosen action (index)
+        :param action: chosen action (continuous)
         :return free energy, spin_configurations, and visible_nodes.
         """
         # Define QUBO
         visible_nodes = get_visible_nodes_array(
             state=state, action=action,
-            n_bits_action_space=self.n_bits_action_space)
+            state_space=self.state_space, action_space=self.action_space)
         qubo_dict = create_general_qubo_dict(
             self.w_hh, self.w_vh, visible_nodes)
 
         # Run the annealing process (will be either SA, SQA, or QPU)
-        spin_configurations = self.annealer.anneal(
+        spin_configurations = self.sampler.sample(
             qubo_dict=qubo_dict,
             n_meas_for_average=self.n_meas_for_average,
             n_steps=self.n_annealing_steps)
@@ -347,10 +359,10 @@ class QFunction(object):
         # Based on sampled spin configurations calculate free energy
         avg_eff_hamiltonian = get_average_effective_hamiltonian(
             spin_configurations, self.w_hh, self.w_vh, visible_nodes,
-            self.annealer.big_gamma_final, self.annealer.beta_final)
+            self.sampler.big_gamma_final, self.sampler.beta_final)
 
         free_energy = get_free_energy(
-            spin_configurations, avg_eff_hamiltonian, self.annealer.beta_final)
+            spin_configurations, avg_eff_hamiltonian, self.sampler.beta_final)
         q_value = -free_energy
 
         return q_value, spin_configurations, visible_nodes
