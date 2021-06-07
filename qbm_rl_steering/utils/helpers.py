@@ -7,7 +7,6 @@ from stable_baselines3 import DQN
 from tqdm import tqdm
 
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-from qbm_rl_steering.agents.mc_agent import MonteCarloAgent
 
 
 def plot_response(env: TargetSteeringEnv, fig_title: str = '') -> None:

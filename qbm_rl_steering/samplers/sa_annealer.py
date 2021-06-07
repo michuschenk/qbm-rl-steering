@@ -9,7 +9,7 @@ from neal import SimulatedAnnealingSampler
 class SA:
     def __init__(self, beta: Tuple[float, float], big_gamma: float,
                  n_replicas: int, n_annealing_steps: int, n_nodes: int = 16,
-                 beta_schedule: str = 'linear') -> None:
+                 beta_schedule: str = 'geometric') -> None:
         """
         Initialize a simulated annealer (SA) using the dwave neal library.
         :param beta: inverse temperature. First and last entry of tuple
@@ -60,7 +60,7 @@ class SA:
         self.big_gamma_init = big_gamma
         self.big_gamma_final = big_gamma
 
-    def anneal(self, qubo_dict: Dict, n_meas_for_average: int,
+    def sample(self, qubo_dict: Dict, n_meas_for_average: int,
                *args, **kwargs) -> np.ndarray:
         """
         Run the CLASSICAL AnnealingSampler with the DWAVE QUBO method and

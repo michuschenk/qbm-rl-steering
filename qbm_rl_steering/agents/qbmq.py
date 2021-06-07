@@ -1,5 +1,11 @@
+# TODO: NEEDS FIXING ...
+# TODO: group arguments using dicts...
+# TODO: implement double Q
+# TODO: implement replay buffer
+# TODO: parallel agents
+
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-import qbm_rl_steering.utils.qbm_core as utl
+import qbm_rl_steering.agents.qbm_core as utl
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,11 +14,6 @@ import math
 import tqdm
 
 from typing import Tuple, List, Dict
-
-# TODO: group arguments using dicts...
-# TODO: implement double Q
-# TODO: implement replay buffer
-# TODO: parallel agents
 
 
 class QBMQN(object):

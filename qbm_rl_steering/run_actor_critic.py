@@ -7,7 +7,7 @@ from tensorflow.python.framework.ops import disable_eager_execution
 
 from qbm_rl_steering.utils.helpers import plot_log
 from qbm_rl_steering.environment.env_desc import TargetSteeringEnv
-from qbm_rl_steering.utils.qbm_core import QFunction
+from qbm_rl_steering.agents.qbm_core import QFunction
 
 try:
     import matplotlib

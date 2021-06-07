@@ -6,18 +6,18 @@ import gym
 
 # SQAOD (simulated quantum annealing)
 try:
-    from qbm_rl_steering.utils.sqa_annealer import SQA
+    from qbm_rl_steering.samplers.sqa_annealer import SQA
 except ImportError:
     print('! Cannot import libraries (sqaod) required for SQA...')
 
 # Amazon Braket
 try:
-    from qbm_rl_steering.utils.qpu_annealer import QPU
+    from qbm_rl_steering.samplers.qpu_annealer import QPU
 except ImportError:
     print('! Cannot import libraries required for QPU (Amazon Braket)...')
 
 # DWave SimulatedAnnealing
-from qbm_rl_steering.utils.sa_annealer import SA
+from qbm_rl_steering.samplers.sa_annealer import SA
 
 
 def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
