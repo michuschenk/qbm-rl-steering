@@ -86,9 +86,9 @@ class TargetSteeringEnv(gym.Env):
         # Define continuous action space
         self.action_space = gym.spaces.Box(
             low=np.array([self.mssb_angle_min - self.mssb_angle_margin]) *
-                self.action_scale,
+            self.action_scale,
             high=np.array([self.mssb_angle_max + self.mssb_angle_margin]) *
-                self.action_scale)
+            self.action_scale)
 
         # Define continuous observation space
         self.observation_space = gym.spaces.Box(
@@ -163,7 +163,7 @@ class TargetSteeringEnv(gym.Env):
         """
         mssb_angle = None
         init_intensity = 1.1 * self.intensity_threshold
-        while init_intensity > 0.8*self.intensity_threshold:
+        while init_intensity > 0.8 * self.intensity_threshold:
             mssb_angle = np.random.uniform(low=self.mssb_angle_min,
                                            high=self.mssb_angle_max)
             x_init, init_intensity = self.get_pos_at_bpm_target(mssb_angle)
@@ -235,11 +235,7 @@ class TargetSteeringEnv(gym.Env):
         self.intensity_on_target = quad(
             lambda x: 1 / (sigma * (2 * math.pi) ** 0.5) * math.exp(
                 (x - beam_position) ** 2 / (-2 * sigma ** 2)),
-            -3*sigma, 3*sigma)
-
-        if np.isnan(self.intensity_on_target[0]):
-            self.intensity_on_target = np.array(self.intensity_on_target)
-            self.intensity_on_target[0] = 0.
+            -3 * sigma, 3 * sigma)
 
         return self.intensity_on_target[0]
 

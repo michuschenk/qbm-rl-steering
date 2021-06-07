@@ -34,12 +34,12 @@ class QuantumActorCritic:
         self.tau_soft_update = 0.1  # soft update factor
         self.replay_buffer_size = int(1e5)
         self.replay_batch_size = 10  # training batch size.
-        self.action_noise_scale = 0.1
+        self.action_noise_scale = 0.2
 
         # Critic-related input
         self.n_annealing_steps = 80
         self.n_annealings_for_average = 40
-        self.learning_rate_critic = 4e-3
+        self.learning_rate_critic = 6e-3
 
         # Actor-related input
         self.init_learning_rate_actor = 1e-3
@@ -222,8 +222,8 @@ if __name__ == "__main__":
     env = TargetSteeringEnv(max_steps_per_episode=max_episode_length)
     agent = QuantumActorCritic(env, gamma_rl=gamma_rl)
 
-    state, reward, done, ep_rew, ep_len, ep_cnt = env.reset(), initial_reward, \
-                                                  False, [[]], 0, 0
+    state, reward, done, ep_rew, ep_len, ep_cnt = (
+        env.reset(), initial_reward, False, [[]], 0, 0)
 
     # Calculate reward in current state
     _, intensity = env.get_pos_at_bpm_target(env.mssb_angle)
