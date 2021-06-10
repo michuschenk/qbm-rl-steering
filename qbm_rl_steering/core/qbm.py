@@ -4,6 +4,8 @@ import numpy as np
 from typing import Dict, Tuple, Union
 import gym
 
+import matplotlib.pyplot as plt
+
 # SQAOD (simulated quantum annealing)
 try:
     from qbm_rl_steering.samplers.sqa_annealer import SQA
@@ -182,7 +184,7 @@ def get_free_energy(spin_configurations: np.ndarray, avg_eff_hamiltonian: float,
 class QFunction(object):
     def __init__(self, sampler_type: str, state_space: gym.spaces.Box,
                  action_space: gym.spaces.Box, small_gamma: float,
-                 n_graph_nodes: int, n_replicas: int,
+                 n_replicas: int,
                  big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]],
                  n_annealing_steps: int, n_meas_for_average: int,
@@ -198,8 +200,6 @@ class QFunction(object):
         environment (Box type).
         :param small_gamma: RL parameter, discount factor for
         cumulative future rewards.
-        :param n_graph_nodes: number of nodes of the graph structure. E.g. for
-        2 unit cells of the DWAVE-2000 chip, it's 16 nodes (8 per unit).
         :param n_replicas: number of replicas (aka. Trotter slices) in the 3D
         extension of the Ising model, see Fig. 1 in paper:
         https://arxiv.org/pdf/1706.00074.pdf
@@ -217,6 +217,13 @@ class QFunction(object):
         initialization of the DWAVE QPU on Amazon Braket.
         """
         # TODO: adapt documentation
+
+        # TODO: comment on that ... defines architecture of 'QPU'
+        self.n_nodes_per_unit_cell = 8
+        self.n_rows = 1
+        self.n_columns = 3
+        self.n_unit_cells = self.n_rows * self.n_columns
+        n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
         if sampler_type == 'SQA':
             self.sampler = SQA(
@@ -265,26 +272,44 @@ class QFunction(object):
         """
         # ==============================
         # COUPLINGS BETWEEN HIDDEN NODES
-        # This loop initializes weights to fully connect the nodes in the two
-        # unit cells of the Chimera graph (see Fig. 2 in the paper:
-        # https://arxiv.org/pdf/1706.00074.pdf). The indexing of the nodes is
-        # starting at the top left (node 0) and goes down vertically (blue
-        # nodes), and then to the right (first red node is index 4). These
-        # are 32 couplings = 2 * 4**2.
+        # This loop initializes hidden-hidden coupling weights to fully connect
+        # nodes in a number of unit cells, e.g. of the Chimera graph (see Fig. 2
+        # in paper: https://arxiv.org/pdf/1706.00074.pdf). The number of
+        # unit cells can be arbitrary. The indexing of the nodes is starting
+        # at the top left (node 0) and goes down vertically (blue nodes), and
+        # then to the right (first red node is index 4). Note that inter-cell
+        # couplings will be added in a separate loop below.
         w_hh = dict()
-        for i, ii in zip(tuple(range(4)), tuple(range(8, 12))):
-            for j, jj in zip(tuple(range(4, 8)), tuple(range(12, 16))):
-                w_hh[(i, j)] = 2 * random.random() - 1
-                w_hh[(ii, jj)] = 2 * random.random() - 1
+        for unit_idx in range(self.n_unit_cells):
+            first_node = self.n_nodes_per_unit_cell * unit_idx
+            for i in range(first_node, first_node + 4):
+                for j in range(first_node + 4, first_node + 8):
+                    w_hh[(i, j)] = 2 * random.random() - 1
 
-        # This loop connects the 4 red nodes of the first unit cell of the
-        # Chimera graph on the left (Fig. 2) to the blue nodes of the second
-        # unit on the right, i.e. node 4 to node 12; node 5 to node 13,
-        # etc. These are 4 additional couplings.
-        for i, j in zip(tuple(range(4, 8)), tuple(range(12, 16))):
-            w_hh[(i, j)] = 2 * random.random() - 1
+        # This loop creates inter-cell couplings based on the chosen
+        # architecture (i.e. n_rows vs. n_columns). Unit cells are horizontally
+        # connected as 4 -> 12 -> 20 -> etc., 5 -> 13 -> 21 -> etc.,
+        # while they are vertically connected as (if n_columns = 2) 0 -> 16
+        # -> 32 -> etc., 1 -> 17 -> 33 -> etc.
+        # 1) Horizontal inter-cell couplings
+        for col in range(self.n_columns - 1):
+            for row in range(self.n_rows):
+                first_node = (col * self.n_nodes_per_unit_cell +
+                              row * self.n_columns * self.n_nodes_per_unit_cell)
+                for i, j in zip(tuple(range(first_node + 4, first_node + 8)),
+                                tuple(range(first_node + 12, first_node + 16))):
+                    w_hh[(i, j)] = 2 * random.random() - 1
 
-        # We get a total of 32 + 4 = 36 hidden couplings defined by w_hh.
+        # 2) Vertical inter-cell couplings
+        for row in range(self.n_rows - 1):
+            for col in range(self.n_columns):
+                first_node = (col * self.n_nodes_per_unit_cell +
+                              row * self.n_columns * self.n_nodes_per_unit_cell)
+                for i, j in zip(tuple(range(first_node, first_node + 4)),
+                                tuple(range(
+                                    first_node + 8 * self.n_columns,
+                                    first_node + 8 * self.n_columns + 4))):
+                    w_hh[(i, j)] = 2 * random.random() - 1
 
         # ==============================
         # COUPLINGS BETWEEN VISIBLE [the 'input' (= state layer) and the
@@ -293,29 +318,59 @@ class QFunction(object):
 
         # Dense connection between the state nodes (visible) and the BLUE
         # hidden nodes (all 8 of them) of the Chimera graph. Blue nodes have
-        # indices [0, 1, 2, 3, 12, 13, 14, 15]. We hence have connections
-        # between the state nodes [0, 1, ..., n_bits_observation_space] to
-        # all of the blue nodes. This is n_bits_observation_space * 8 = 64
-        # couplings (here).
-        for j in (tuple(range(4)) + tuple(range(12, 16))):
+        # indices [0, 1, 2, 3, 12, 13, 14, 15, 16, 17, 18, 19, ...]. We hence
+        # have connections between the state nodes [0, 1, ...,
+        # len(state_space.high)] to all of the blue nodes.
+        blue_nodes = tuple()
+        for i in range(self.n_unit_cells):
+            pick_col = i % 2
+            first_node = i * self.n_nodes_per_unit_cell + pick_col * 4
+            blue_nodes += tuple(range(first_node, first_node + 4))
+
+        for j in blue_nodes:
             for i in range(len(self.state_space.high)):
                 w_vh[(i, j)] = 2 * random.random() - 1
 
         # Dense connection between the action nodes (visible) and the RED hidden
-        # nodes (all 8 of them) of the Chimera graph. Red nodes have indices
-        # [4, 5, 6, 7, 8, 9, 10, 11]. We hence have connections between the
-        # action nodes [n_bits_observation_space, ..,
-        # n_bits_observation_space + n_bits_action_space] (here: [8, 9]) to all
-        # of the red nodes. This is n_bits_action_space * 8 = 16 couplings
-        # (here).
-        for j in (tuple(range(4, 8)) + tuple(range(8, 12))):
+        # nodes of the Chimera graph. Red nodes have indices [4, 5, 6, 7, 8,
+        # 9, 10, 11, 20, 21, 22, 23, ...]. We hence have connections between the
+        # action nodes [len(state_space.high), ..,
+        # len(state_space.high) + len(action_space.high)] to all of the red
+        # nodes.
+        red_nodes = tuple()
+        for i in range(self.n_unit_cells):
+            pick_col = (i+1) % 2
+            first_node = i * self.n_nodes_per_unit_cell + pick_col * 4
+            red_nodes += tuple(range(first_node, first_node + 4))
+        for j in red_nodes:
             for i in range(
                     len(self.state_space.high),
                     len(self.state_space.high) + len(self.action_space.high)):
                 w_vh[(i, j)] = 2 * random.random() - 1
 
-        # We get a total of 64 + 16 = 80 couplings (here) defined by w_vh.
         return w_hh, w_vh
+
+    # def draw_architecture(self):
+    #     fig = plt.figure()
+    #
+    #     delta_x_intra = 2
+    #     delta_x_inter = 4
+    #     delta_y_intra = 2
+    #     delta_y_inter = 4
+    #
+    #     # Nodes
+    #     x_coords_unit_cell = np.array([0., delta_x_intra] * 4)
+    #     y_coords_unit_cell = np.array([0., 0., -delta_y_intra, -delta_y_intra,
+    #                                   -2*delta_y_intra, -2*delta_y_intra,
+    #                                   -3*delta_y_intra, -3*delta_y_intra])
+    #     for col in range(self.n_columns):
+    #         for row in range(self.n_rows):
+    #             plt.plot(x_coords_unit_cell, y_coords_unit_cell, 'ok')
+    #
+    #
+    #     # Couplings
+    #     for i, j in self.w_hh.keys():
+    #         plt.plot()
 
     def calculate_q_value_on_batch(self, states, actions):
         q_values = []
