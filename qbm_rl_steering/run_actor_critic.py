@@ -158,35 +158,55 @@ def plot_log(all_rewards, plot_title=''):
 # TODO: fix 'issue' that env does not stop immediately when we are already
 #  within threshold?
 
-# ENVIRONMENT
-# env = TargetSteeringEnv(max_steps_per_episode=max_episode_length)
-# env = TargetSteeringEnv2D(max_steps_per_episode=max_episode_length)
-env = SimulationEnv(plane='H', remove_singular_devices=True)
+n_trainings = 10
 
-# AGENT
-gamma_rl = 0.95
-batch_size = 16
-agent = QuantumActorCritic(env, gamma_rl=gamma_rl, batch_size=batch_size)
+# To save performance data
+# i.e. rewards evolution
+train_stats = []
+eval_stats = []
 
-# RUN TRAINING LOOP
-n_episodes = 100
+# Env / train and eval
+n_episodes_train = 100
 max_episode_length = 20
 exploration_steps = 50
-training_rewards = trainer(
-    env=env, agent=agent, n_episodes=n_episodes,
-    max_episode_length=max_episode_length, exploration_steps=exploration_steps)
 
-# PLOT TRAINING EVOLUTION
-plot_log(training_rewards, plot_title='Training')
+n_episodes_evaluation = 100
 
-# RUN EVALUATION
-n_episodes_evaluation = 80
-env = SimulationEnv(plane='H', remove_singular_devices=True)
-# env = TargetSteeringEnv2D(max_steps_per_episode=max_episode_length)
-# env = TargetSteeringEnv(max_steps_per_episode=max_episode_length)
+# Agent
+gamma_rl = 0.95
+batch_size = 16
+for i in range(n_trainings):
 
-evaluation_rewards = evaluator(
-    env=env, agent=agent, n_episodes=n_episodes_evaluation,
-    max_episode_length=max_episode_length)
+    # ENVIRONMENT
+    # env = TargetSteeringEnv(max_steps_per_episode=max_episode_length)
+    # env = TargetSteeringEnv2D(max_steps_per_episode=max_episode_length)
+    env = SimulationEnv(plane='H', remove_singular_devices=True)
 
-plot_log(evaluation_rewards, plot_title='Evaluation')
+    # AGENT
+    agent = QuantumActorCritic(env, gamma_rl=gamma_rl, batch_size=batch_size)
+
+    # RUN TRAINING LOOP
+    training_rewards = trainer(
+        env=env, agent=agent, n_episodes=n_episodes_train,
+        max_episode_length=max_episode_length,
+        exploration_steps=exploration_steps)
+
+    # PLOT TRAINING EVOLUTION
+    plot_log(training_rewards, plot_title=f'Training {i}')
+
+    # RUN EVALUATION
+    env = SimulationEnv(plane='H', remove_singular_devices=True)
+    # env = TargetSteeringEnv2D(max_steps_per_episode=max_episode_length)
+    # env = TargetSteeringEnv(max_steps_per_episode=max_episode_length)
+
+    evaluation_rewards = evaluator(
+        env=env, agent=agent, n_episodes=n_episodes_evaluation,
+        max_episode_length=max_episode_length)
+
+    plot_log(evaluation_rewards, plot_title=f'Evaluation {i}')
+
+    train_stats.append(training_rewards)
+    eval_stats.append(evaluation_rewards)
+
+np.save('data_train', np.array(train_stats))
+np.save('data_eval', np.array(eval_stats))

@@ -12,29 +12,37 @@ from qbm_rl_steering.core.utils import Memory
 
 
 class QuantumActorCritic:
-    def __init__(self, env: gym.Env, gamma_rl: float, batch_size: int):
-        # env intel
+    def __init__(
+            self, env: gym.Env, gamma_rl: float, batch_size: int,
+            action_noise_scale: float = 0.15, tau_soft_update: float = 0.1,
+            critic_learning_rate: float = 1e-3,
+            actor_initial_learning_rate: float = 3e-3,
+            n_annealing_steps: int = 100, n_anneals_for_average: int = 30):
+
+        # Environment parameters
         self.env = env
         self.action_n = env.action_space.shape[0]
         self.state_dim = env.observation_space.shape
 
-        # constants
-        self.action_limit = max(env.action_space.high)
-        self.gamma_rl = gamma_rl  # discounted reward factor
-        self.tau_soft_update = 0.1  # soft update factor
+        # RL parameters
+        self.action_limit = max(
+            max(np.abs(env.action_space.high)),
+            max(np.abs(env.action_space.low)))
+        self.gamma_rl = gamma_rl
+        self.tau_soft_update = tau_soft_update
         self.replay_buffer_size = int(1e5)
-        self.replay_batch_size = batch_size  # training batch size.
-        self.action_noise_scale = 0.15
+        self.replay_batch_size = batch_size
+        self.action_noise_scale = action_noise_scale
 
-        # Critic-related input
-        self.n_annealing_steps = 80
-        self.n_annealings_for_average = 30
-        self.learning_rate_critic = 1e-3  #2e-3
+        # Critic-related parameters (QBM)
+        self.n_annealing_steps = n_annealing_steps
+        self.n_anneals_for_average = n_anneals_for_average
+        self.critic_learning_rate = critic_learning_rate
 
-        # Actor-related input
-        self.init_learning_rate_actor = 5e-4
+        # Actor-related parameters
+        self.actor_initial_learning_rate = actor_initial_learning_rate
 
-        # create networks
+        # Create networks
         self.dummy_Q_target_prediction_input = np.zeros(
             (self.replay_batch_size, 1))
         self.dummy_dones_input = np.zeros((self.replay_batch_size, 1))
@@ -44,7 +52,7 @@ class QuantumActorCritic:
         self.actor = self._generate_actor_net()
         self.actor_target = self._generate_actor_net()
 
-        # Make weights of local and target nets identical
+        # Synchronize weights between local and target critic / actor networks
         # Critic
         for k in self.critic.w_hh.keys():
             self.critic_target.w_hh[k] = self.critic.w_hh[k]
@@ -59,7 +67,8 @@ class QuantumActorCritic:
         self.replay_memory = Memory(
             self.state_dim[0], self.action_n, self.replay_buffer_size)
 
-        # loss tracking
+        # Loss tracking for debugging
+        # TODO: to be removed eventually
         self.mu_losses = []
         self.q_losses = []
         self.q_before = []
@@ -73,7 +82,7 @@ class QuantumActorCritic:
         out = KL.Dense(self.action_n, activation='tanh')(dense)
         model = K.Model(inputs=state_input, outputs=out)
         model.compile(optimizer=K.optimizers.Adam(
-            learning_rate=self.init_learning_rate_actor),
+            learning_rate=self.actor_initial_learning_rate),
             loss=self._ddpg_actor_loss)
         model.summary()
         return model
@@ -81,8 +90,6 @@ class QuantumActorCritic:
     def get_action(self, states, noise=None, episode=1):
         """ Get batch of proposed actions from the local actor network based
         on batch of input states. Also add noise during training phase. """
-        # print('get_action states.shape', states.shape)
-
         if noise is None:
             noise = self.action_noise_scale
         if len(states.shape) == 1:
@@ -90,7 +97,6 @@ class QuantumActorCritic:
         action = self.actor.predict_on_batch(states)
         if noise != 0:
             action += noise / episode * np.random.randn(self.action_n)
-            # action += noise * np.random.randn(self.action_n)
             action = np.clip(action, -self.action_limit, self.action_limit)
         return action
 
@@ -101,9 +107,7 @@ class QuantumActorCritic:
         return self.actor_target.predict_on_batch(states)
 
     def train_actor(self, states, actions):
-        # print('before training actor', self.actor.get_weights())
         self.actor.train_on_batch(states, states)
-        # print('after training actor', self.actor.get_weights())
 
     def _generate_critic_net(self):
         """ Initialize QBM with random weights / couplings. Here we also
@@ -120,7 +124,7 @@ class QuantumActorCritic:
             n_replicas=1,
             big_gamma=(20., 0.), beta=2.,
             n_annealing_steps=self.n_annealing_steps,
-            n_meas_for_average=self.n_annealings_for_average,
+            n_meas_for_average=self.n_anneals_for_average,
             kwargs_qpu={})
 
         return QFunction(**kwargs_q_func)
@@ -139,8 +143,14 @@ class QuantumActorCritic:
             q_value = np.array(q_value)
 
             # Numerical derivatives
-            dq_over_dstate = self.get_state_derivative(y_true, y_pred)
+            # dq_over_dstate = self.get_state_derivative(y_true, y_pred)
             dq_over_daction = self.get_action_derivative(y_true, y_pred)
+
+            # TODO: this is a dirty hack. We do not need the derivatives wrt.
+            #  state for the training, so I just put zeros for now to speed
+            #  up the code.
+            dq_over_dstate = np.zeros((self.state_dim[0],
+                                       self.replay_batch_size))
 
             # q_value, dq_over_dstate, dq_over_daction = \
             #     self.get_state_action_derivative_analytical(
@@ -316,7 +326,7 @@ class QuantumActorCritic:
             # Update weights and target Q-function if needed
             self.critic.update_weights(
                 spin_configs, visible_nodes, q_value, next_q_value,
-                rewards[jj], learning_rate=self.learning_rate_critic)
+                rewards[jj], learning_rate=self.critic_learning_rate)
 
             q_target = rewards[jj] + self.critic.small_gamma * next_q_value
             q_loss = (q_value - q_target) ** 2
@@ -352,6 +362,7 @@ class QuantumActorCritic:
         """
         states, actions, rewards, next_states, dones = (
             self.replay_memory.get_sample(batch_size=self.replay_batch_size))
+        # self.replay_batch_size = self.replay_memory.size
         # print('train, states.shape, actions.shape, rewards.shape, '
         #       'next_states.shape, dones.shape', states.shape, actions.shape,
         #       rewards.shape, next_states.shape, dones.shape)
