@@ -251,8 +251,8 @@ class QFunction(object):
 
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 3
-        self.n_columns = 3
+        self.n_rows = 4
+        self.n_columns = 2
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
@@ -295,6 +295,7 @@ class QFunction(object):
         for k in self.w_vh.keys():
             self.w_vh_history[k] = []
             self.w_vh_history[k].append(self.w_vh[k])
+        self.update_factor_history = []
 
     def _initialise_weights(self) -> Tuple[Dict, Dict]:
         """
@@ -508,6 +509,7 @@ class QFunction(object):
         # This term is the same for both weight updates w_hh and w_vh
         update_factor = learning_rate * (
                 reward + self.small_gamma * future_q - current_q)
+        self.update_factor_history.append(update_factor)
 
         # Update of w_vh, Eq. (11)
         h_avg = np.mean(np.mean(spin_configurations, axis=0), axis=0)

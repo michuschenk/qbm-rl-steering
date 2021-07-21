@@ -158,7 +158,7 @@ def plot_log(all_rewards, plot_title=''):
 # TODO: fix 'issue' that env does not stop immediately when we are already
 #  within threshold?
 
-n_trainings = 10
+n_trainings = 1
 
 # To save performance data
 # i.e. rewards evolution
@@ -167,14 +167,14 @@ eval_stats = []
 
 # Env / train and eval
 n_episodes_train = 100
-max_episode_length = 20
+max_episode_length = 15
 exploration_steps = 50
 
-n_episodes_evaluation = 100
+n_episodes_evaluation = 20
 
 # Agent
 gamma_rl = 0.95
-batch_size = 16
+batch_size = 8
 for i in range(n_trainings):
 
     # ENVIRONMENT
@@ -207,6 +207,7 @@ for i in range(n_trainings):
 
     train_stats.append(training_rewards)
     eval_stats.append(evaluation_rewards)
+
 
 np.save('data_train', np.array(train_stats))
 np.save('data_eval', np.array(eval_stats))

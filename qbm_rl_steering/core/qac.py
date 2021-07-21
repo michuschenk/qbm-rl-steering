@@ -14,10 +14,11 @@ from qbm_rl_steering.core.utils import Memory
 class QuantumActorCritic:
     def __init__(
             self, env: gym.Env, gamma_rl: float, batch_size: int,
-            action_noise_scale: float = 0.15, tau_soft_update: float = 0.1,
+            action_noise_scale: float = 0.1, tau_soft_update: float = 0.1,
             critic_learning_rate: float = 1e-3,
+            critic_learning_rate_decay: float = 5e-6,
             actor_initial_learning_rate: float = 3e-3,
-            n_annealing_steps: int = 100, n_anneals_for_average: int = 30):
+            n_annealing_steps: int = 150, n_anneals_for_average: int = 300):
 
         # Environment parameters
         self.env = env
@@ -38,6 +39,7 @@ class QuantumActorCritic:
         self.n_annealing_steps = n_annealing_steps
         self.n_anneals_for_average = n_anneals_for_average
         self.critic_learning_rate = critic_learning_rate
+        self.critic_learning_rate_decay = critic_learning_rate_decay
 
         # Actor-related parameters
         self.actor_initial_learning_rate = actor_initial_learning_rate
@@ -215,7 +217,7 @@ class QuantumActorCritic:
         # return np.atleast_1d(
         #     np.float_((qeps_plus - qeps_minus) / (2 * epsilon)))
 
-    def get_action_derivative(self, states, actions, epsilon=0.4):
+    def get_action_derivative(self, states, actions, epsilon=0.3):
         # Need to take derivative for each action separately
         # e.g. if we have batch size of 5, and 10 actions, we expect an
         # output for dQ / da of shape (5, 10).
@@ -235,6 +237,7 @@ class QuantumActorCritic:
                 states, actions_tmp2)
 
             grad_ = np.float_((qeps_plus - qeps_minus) / (2 * epsilon))
+            # grad_ /= np.max(np.abs(grad_))
             grads[:, i] = grad_.flatten()
 
         grads = np.asarray(grads, dtype=np.float32)
@@ -289,7 +292,6 @@ class QuantumActorCritic:
         # print('grads', grads)
         return grads.T
 
-
     def train_critic(self, states, next_states, actions, rewards, dones,
                      random_phase=False):
         # Training the QBM
@@ -301,6 +303,7 @@ class QuantumActorCritic:
         else:
             next_actions = self.get_target_actions(next_states)
 
+        self.critic_learning_rate -= self.critic_learning_rate_decay
         q_loss_batch = np.zeros(len(states))
         for jj in np.arange(len(states)):
             # print('self.actor.get_weights()', self.actor.get_weights())
@@ -327,12 +330,12 @@ class QuantumActorCritic:
             self.critic.update_weights(
                 spin_configs, visible_nodes, q_value, next_q_value,
                 rewards[jj], learning_rate=self.critic_learning_rate)
+            # print('Critic learning rate', self.critic_learning_rate)
 
             q_target = rewards[jj] + self.critic.small_gamma * next_q_value
             q_loss = (q_value - q_target) ** 2
             q_loss_batch[jj] = q_loss
         self.q_losses.append(q_loss_batch.mean())
-
 
     def _soft_update_actor_and_critic(self):
         """ Perform update of target actor and critic network weights using
@@ -373,6 +376,7 @@ class QuantumActorCritic:
         # q, _, _ = self.critic.calculate_q_value_on_batch(states, actions)
         # self.q_before.append(q.mean())
         # self.mu_losses.append(-q.mean())
+        # print('training actor')
         self.train_actor(states, actions)
         #
         # actions_tmp = self.actor.predict_on_batch(states)
