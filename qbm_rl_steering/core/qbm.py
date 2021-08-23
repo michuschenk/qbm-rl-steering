@@ -38,6 +38,7 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
     state_normalized = 2. * state / (state_space.high - state_space.low)
     action_normalized = 2. * action / (action_space.high - action_space.low)
     visible_nodes = np.array(list(state_normalized) + list(action_normalized))
+    # print('visible_nodes', visible_nodes)
     return visible_nodes
 
 
@@ -76,6 +77,23 @@ def create_general_qubo_dict(
             qubo_dict[(k[1], k[1])] += w * visible_nodes[k[0]]
 
     return qubo_dict
+
+
+def get_gradient_average_effective_hamiltonian(
+        spin_configurations: np.ndarray, w_vh: Dict,
+        visible_nodes: np.ndarray):
+    """
+    Calculate gradient with respect to visible nodes
+    (note that we only take gradient of Heff wrt. v)
+    """
+    n_meas_for_average, n_replicas, _ = spin_configurations.shape
+
+    h_derivative_wrt_v = np.zeros((len(visible_nodes), n_meas_for_average))
+    for (v, h), w in w_vh.items():
+        h_derivative_wrt_v[v, :] -= np.sum(
+            w * spin_configurations[:, :, h], axis=-1) / n_replicas
+
+    return np.float_(np.mean(h_derivative_wrt_v, axis=-1))
 
 
 def get_average_effective_hamiltonian(
@@ -220,8 +238,8 @@ class QFunction(object):
 
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 1
-        self.n_columns = 3
+        self.n_rows = 4
+        self.n_columns = 4
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
@@ -372,23 +390,45 @@ class QFunction(object):
     #     for i, j in self.w_hh.keys():
     #         plt.plot()
 
-    def calculate_q_value_on_batch(self, states, actions):
+    def calculate_q_value_on_batch(self, states, actions,
+                                   calc_derivative: bool = False):
         q_values = []
         spin_configurations = []
         visible_nodes = []
+        grads_wrt_s = []
+        grads_wrt_a = []
         for i in range(len(states)):
-            q, sc, vn = self.calculate_q_value(states[i], actions[i])
-            q_values.append(q)
-            spin_configurations.append(sc)
-            visible_nodes.append(vn)
+            # print('calc q val on batch, states[i]', states[i])
+            # print('calc q val on batch, actions[i]', actions[i])
+            if calc_derivative:
+                q, sc, vn, grad_s, grad_a = self.calculate_q_value(
+                    states[i], actions[i], calc_derivative=calc_derivative)
+                q_values.append(q)
+                spin_configurations.append(sc)
+                visible_nodes.append(vn)
+                grads_wrt_a.append(grad_a)
+                grads_wrt_s.append(grad_s)
+            else:
+                q, sc, vn = self.calculate_q_value(
+                    states[i], actions[i], calc_derivative=calc_derivative)
+                q_values.append(q)
+                spin_configurations.append(sc)
+                visible_nodes.append(vn)
         q_values = np.array(q_values)
         spin_configurations = np.array(spin_configurations)
         visible_nodes = np.array(visible_nodes)
 
+        if calc_derivative:
+            grads_wrt_a = np.array(grads_wrt_a)
+            grads_wrt_s = np.array(grads_wrt_s)
+            return (q_values, spin_configurations, visible_nodes,
+                    grads_wrt_s, grads_wrt_a)
+
+        # print('q_values.shape', q_values.shape)
         return q_values, spin_configurations, visible_nodes
 
-    def calculate_q_value(self, state: np.ndarray, action: np.ndarray) -> \
-            Tuple[float, np.ndarray, np.ndarray]:
+    def calculate_q_value(self, state: np.ndarray, action: np.ndarray,
+                          calc_derivative: bool = False):
         """
         Based on state and chosen action, calculate the free energy,
         spin_configurations and vis_iterable.
@@ -418,6 +458,14 @@ class QFunction(object):
         free_energy = get_free_energy(
             spin_configurations, avg_eff_hamiltonian, self.sampler.beta_final)
         q_value = -free_energy
+
+        if calc_derivative:
+            grads_wrt_v = get_gradient_average_effective_hamiltonian(
+                spin_configurations, self.w_vh, visible_nodes)
+            grads_wrt_s = grads_wrt_v[:len(self.state_space.high)]
+            grads_wrt_a = grads_wrt_v[len(self.state_space.high):]
+            return (q_value, spin_configurations, visible_nodes, grads_wrt_s,
+                    grads_wrt_a)
 
         return q_value, spin_configurations, visible_nodes
 

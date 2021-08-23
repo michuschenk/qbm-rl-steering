@@ -23,9 +23,9 @@ class Memory:
         self.size = min(self.size + 1, self.max_size)
 
     def get_sample(self, batch_size=32):
-        if self.size < batch_size:
-            idxs = np.random.randint(0, self.size, size=self.size)
-        else:
-            idxs = np.random.randint(0, self.size, size=batch_size)
+        # if self.size < batch_size:
+        #     idxs = np.random.randint(0, self.size, size=self.size)
+        # else:
+        idxs = np.random.randint(0, self.size, size=batch_size)
         return (self.states[idxs], self.actions[idxs], self.rewards[idxs],
                 self.next_states[idxs], self.dones[idxs])
