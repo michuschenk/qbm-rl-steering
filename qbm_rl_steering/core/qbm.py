@@ -38,7 +38,6 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
     state_normalized = 2. * state / (state_space.high - state_space.low)
     action_normalized = 2. * action / (action_space.high - action_space.low)
     visible_nodes = np.array(list(state_normalized) + list(action_normalized))
-    # print('visible_nodes', visible_nodes)
     return visible_nodes
 
 
@@ -282,6 +281,7 @@ class QFunction(object):
         for k in self.w_vh.keys():
             self.w_vh_history[k] = []
             self.w_vh_history[k].append(self.w_vh[k])
+        self.update_factor_history = []
 
     def _initialise_weights(self) -> Tuple[Dict, Dict]:
         """
@@ -494,6 +494,7 @@ class QFunction(object):
         # This term is the same for both weight updates w_hh and w_vh
         update_factor = learning_rate * (
                 reward + self.small_gamma * future_q - current_q)
+        self.update_factor_history.append(update_factor)
 
         # Update of w_vh, Eq. (11)
         h_avg = np.mean(np.mean(spin_configurations, axis=0), axis=0)
