@@ -38,6 +38,7 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
     state_normalized = 2. * state / (state_space.high - state_space.low)
     action_normalized = 2. * action / (action_space.high - action_space.low)
     visible_nodes = np.array(list(state_normalized) + list(action_normalized))
+    # print('visible_nodes', visible_nodes)
     return visible_nodes
 
 
@@ -237,8 +238,8 @@ class QFunction(object):
 
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 4
-        self.n_columns = 4
+        self.n_rows = 4  # 4
+        self.n_columns = 4  # 4
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
@@ -281,9 +282,8 @@ class QFunction(object):
         for k in self.w_vh.keys():
             self.w_vh_history[k] = []
             self.w_vh_history[k].append(self.w_vh[k])
-        self.update_factor_history = []
 
-    def _initialise_weights(self) -> Tuple[Dict, Dict]:
+    def _initialise_weights(self, scale=1) -> Tuple[Dict, Dict]:
         """
         Initialise the coupling weights of the Chimera graph, i.e. both
         hidden-hidden couplings and visible-hidden couplings.
@@ -302,7 +302,7 @@ class QFunction(object):
             first_node = self.n_nodes_per_unit_cell * unit_idx
             for i in range(first_node, first_node + 4):
                 for j in range(first_node + 4, first_node + 8):
-                    w_hh[(i, j)] = 2 * random.random() - 1
+                    w_hh[(i, j)] = (2 * random.random() - 1) * scale
 
         # This loop creates inter-cell couplings based on the chosen
         # architecture (i.e. n_rows vs. n_columns). Unit cells are horizontally
@@ -316,7 +316,7 @@ class QFunction(object):
                               row * self.n_columns * self.n_nodes_per_unit_cell)
                 for i, j in zip(tuple(range(first_node + 4, first_node + 8)),
                                 tuple(range(first_node + 12, first_node + 16))):
-                    w_hh[(i, j)] = 2 * random.random() - 1
+                    w_hh[(i, j)] = (2 * random.random() - 1) * scale
 
         # 2) Vertical inter-cell couplings
         for row in range(self.n_rows - 1):
@@ -327,7 +327,7 @@ class QFunction(object):
                                 tuple(range(
                                     first_node + 8 * self.n_columns,
                                     first_node + 8 * self.n_columns + 4))):
-                    w_hh[(i, j)] = 2 * random.random() - 1
+                    w_hh[(i, j)] = (2 * random.random() - 1) * scale
 
         # ==============================
         # COUPLINGS BETWEEN VISIBLE [the 'input' (= state layer) and the
@@ -347,7 +347,7 @@ class QFunction(object):
 
         for j in blue_nodes:
             for i in range(len(self.state_space.high)):
-                w_vh[(i, j)] = 2 * random.random() - 1
+                w_vh[(i, j)] = (2 * random.random() - 1) * scale
 
         # Dense connection between the action nodes (visible) and the RED hidden
         # nodes of the Chimera graph. Red nodes have indices [4, 5, 6, 7, 8,
@@ -364,7 +364,7 @@ class QFunction(object):
             for i in range(
                     len(self.state_space.high),
                     len(self.state_space.high) + len(self.action_space.high)):
-                w_vh[(i, j)] = 2 * random.random() - 1
+                w_vh[(i, j)] = (2 * random.random() - 1) * scale
 
         return w_hh, w_vh
 
@@ -472,7 +472,7 @@ class QFunction(object):
     def update_weights(
             self, spin_configurations: np.ndarray, visible_nodes: np.ndarray,
             current_q: float, future_q: float, reward: float,
-            learning_rate: float) -> None:
+            learning_rate: float, grad_clip: float = 1.) -> None:
         """
         Calculates the TD(0) learning step, i.e. the updates of the coupling
         dictionaries w_hh, w_vh according to Eqs. (11) and (12) in the paper:
@@ -494,18 +494,21 @@ class QFunction(object):
         # This term is the same for both weight updates w_hh and w_vh
         update_factor = learning_rate * (
                 reward + self.small_gamma * future_q - current_q)
-        self.update_factor_history.append(update_factor)
 
         # Update of w_vh, Eq. (11)
         h_avg = np.mean(np.mean(spin_configurations, axis=0), axis=0)
         for v, h in self.w_vh.keys():
-            self.w_vh[(v, h)] += update_factor * visible_nodes[v] * h_avg[h]
+            grads = update_factor * visible_nodes[v] * h_avg[h]
+            grads = np.clip(grads, -grad_clip, grad_clip)
+            self.w_vh[(v, h)] += grads
 
         # Update of w_hh, Eq. (12)
         for h, h_prime in self.w_hh.keys():
-            self.w_hh[(h, h_prime)] += update_factor * np.mean(
+            grads = update_factor * np.mean(
                 spin_configurations[:, :, h] *
                 spin_configurations[:, :, h_prime])
+            grads = np.clip(grads, -grad_clip, grad_clip)
+            self.w_hh[(h, h_prime)] += grads
 
         # Keep track of the weights
         for k in self.w_hh.keys():
