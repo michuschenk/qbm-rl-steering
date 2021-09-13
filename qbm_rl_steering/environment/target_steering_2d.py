@@ -44,25 +44,20 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
     return m11 * x + m12 * px, m21 * x + m22 * px
 
 
-class TargetSteeringEnv2D(gym.Env):
+class TargetSteeringEnv(gym.Env):
     def __init__(self, max_steps_per_episode: int = 20) -> None:
         """
         :param max_steps_per_episode: max number of steps we allow agent to
         'explore' per episode. After this number of steps, episode is aborted.
         :param action_scale: scaling factor for the action. """
-        super(TargetSteeringEnv2D, self).__init__()
+        super(TargetSteeringEnv, self).__init__()
 
         # DEFINE TRANSFER LINE
-        self.mssb = TwissElement(16.1, -0.397093117, 0.045314011,
-                                       1.46158005)
-        self.mbb = TwissElement(8.88303879, -0.374085208, 0.057623602,
-                                      1.912555325)
+        self.mssb = TwissElement(16.1, -0.397093117, 0.045314011, 1.46158005)
         self.bpm1 = TwissElement(339.174497, -6.521184683, 2.078511443,
-                                       2.081365696)
-        self.bpm2 = TwissElement(30.82651983, 1.876067844, 0.929904474,
-                                       2.163823492)
+                                 2.081365696)
         self.target = TwissElement(7.976311944, -0.411639485, 0.30867161,
-                                         2.398031982)
+                                   2.398031982)
 
         # MSSB DIPOLE / KICKER
         # mssb_angle: dipole kick angle (rad)
@@ -71,13 +66,6 @@ class TargetSteeringEnv2D(gym.Env):
         self.mssb_angle_max = 140e-6  # 140e-6  # (rad)
         self.mssb_angle_min = -self.mssb_angle_max  # (rad)
         self.mssb_angle_margin = 30e-6
-
-        self.mbb_angle = None  # not set, will be init. with self.reset()
-        self.mbb_angle_max = 140e-6  # 140e-6  # (rad)
-        self.mbb_angle_min = -self.mbb_angle_max  # (rad)
-        self.mbb_angle_margin = 30e-6
-
-        # Use same action_scale for mbb and mssb
         self.action_scale = (2. / (self.mssb_angle_max - self.mssb_angle_min +
                                    2 * self.mssb_angle_margin))
 
@@ -88,81 +76,77 @@ class TargetSteeringEnv2D(gym.Env):
         # observation_space given mssb_angle_min, mssb_angle_max
         self.x0 = 0.
         self.state = None  # not set, will be init. with self.reset()
-        mssb_angle = self.mssb_angle_max + self.mssb_angle_margin
-        mbb_angle = self.mbb_angle_max + self.mbb_angle_margin
-
-        x_max_wMargin, _ = self.get_pos_at_bpm_target(mssb_angle, mbb_angle)
-
-        mssb_angle = self.mssb_angle_min - self.mssb_angle_margin
-        mbb_angle = self.mbb_angle_min - self.mbb_angle_margin
-        x_min_wMargin, _ = self.get_pos_at_bpm_target(mssb_angle, mbb_angle)
-
-        self.state_scale = 2. / (np.max(x_max_wMargin) - np.min(x_min_wMargin))
-        print('self.state_scale', self.state_scale)
-
+        x_max_wMargin, _ = self.get_pos_at_bpm_target(self.mssb_angle_max +
+                                                      self.mssb_angle_margin)
+        x_min_wMargin, _ = self.get_pos_at_bpm_target(self.mssb_angle_min -
+                                                      self.mssb_angle_margin)
+        self.state_scale = 2. / (x_max_wMargin - x_min_wMargin)
 
         # GYM REQUIREMENTS
         # Define continuous action space
         self.action_space = gym.spaces.Box(
-            low=np.array([self.mssb_angle_min - self.mssb_angle_margin,
-                          self.mbb_angle_min - self.mbb_angle_margin]) *
+            low=np.array([self.mssb_angle_min - self.mssb_angle_margin]) *
             self.action_scale,
-            high=np.array([self.mssb_angle_max + self.mssb_angle_margin,
-                           self.mbb_angle_max + self.mbb_angle_margin]) *
+            high=np.array([self.mssb_angle_max + self.mssb_angle_margin]) *
             self.action_scale)
 
         # Define continuous observation space
         self.observation_space = gym.spaces.Box(
-            low=x_min_wMargin * self.state_scale,
-            high=x_max_wMargin * self.state_scale)
+            low=np.array([x_min_wMargin * self.state_scale]),
+            high=np.array([x_max_wMargin * self.state_scale]))
 
         # For cancellation when beyond certain number of steps in an episode
         self.step_count = None
         self.max_steps_per_episode = max_steps_per_episode
-        self.intensity_threshold = 0.85
+        self.intensity_threshold = 0.85 * self.get_max_intensity()
 
         # Logging
         self.interaction_logger = Logger()
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
+    def step(self, action: float) -> Tuple[np.ndarray, float, bool, Dict]:
         """ Perform one step in the environment (take an action, update
         parameters in environment, receive reward, check if episode ends,
         append all info to logger, return new state, reward, etc.
         :param action: continuous action
         :return tuple of the new state, reward, whether episode is done,
         and dictionary with additional info (not used at the moment). """
-        state = self.state
+        x = self.state
 
         # Apply action and update environment (get new position at BPM and
         # convert into a binary vector)
-        total_mssb_angle = self.mssb_angle + action[0] / self.action_scale
-        total_mbb_angle = self.mbb_angle + action[1] / self.action_scale
+        total_angle = self.mssb_angle + action / self.action_scale
+        x_new, intensity = self.get_pos_at_bpm_target(total_angle)
 
-        new_state, intensity = self.get_pos_at_bpm_target(total_mssb_angle,
-                                                          total_mbb_angle)
+        self.state = np.array([x_new * self.state_scale])
+        self.mssb_angle = total_angle
 
-        self.mssb_angle = total_mssb_angle
-        self.mbb_angle = total_mbb_angle
-        # x1_new, x2_new = new_state
-
-        self.state = new_state * self.state_scale
         self.step_count += 1
 
         # Is episode done?
         done = bool(
             self.step_count > self.max_steps_per_episode
             or intensity > self.intensity_threshold
+            or x_new > (self.observation_space.high / self.state_scale)
+            or x_new < (self.observation_space.low / self.state_scale)
         )
 
         # Keep track of reason for episode abort
         done_reason = -1
+        if self.step_count > self.max_steps_per_episode:
+            done_reason = 0
+        elif intensity > self.intensity_threshold:
+            done_reason = 1
+        elif (x_new > (self.observation_space.high / self.state_scale) or
+              x_new < (self.observation_space.low / self.state_scale)):
+            done_reason = 2
+        else:
+            pass
 
         reward = self.get_reward(intensity)
 
         # Interaction log
         self.interaction_logger.log_episode.append(
-            [state, action / self.action_scale, reward, new_state, done,
-             done_reason])
+            [x, action / self.action_scale, reward, x_new, done, done_reason])
         if done:
             self.interaction_logger.log_all.append(
                 self.interaction_logger.log_episode)
@@ -177,21 +161,35 @@ class TargetSteeringEnv2D(gym.Env):
         any initial state.
         :return: corresponding dipole strength for initial state
         """
-        self.mssb_angle = None
-        self.mbb_angle = None
+        mssb_angle = None
         init_intensity = 1.1 * self.intensity_threshold
         while init_intensity > 0.8 * self.intensity_threshold:
             mssb_angle = np.random.uniform(low=self.mssb_angle_min,
                                            high=self.mssb_angle_max)
-            mbb_angle = np.random.uniform(low=self.mbb_angle_min,
-                                           high=self.mbb_angle_max)
-            x_init, init_intensity = self.get_pos_at_bpm_target(
-                mssb_angle, mbb_angle
-            )
+            x_init, init_intensity = self.get_pos_at_bpm_target(mssb_angle)
+
             if not init_outside_threshold:
                 break
 
-        return mssb_angle, mbb_angle
+        return mssb_angle
+
+    def _init_specific_state(self, init_state: float):
+        """
+        Alternative way to initialize environment, but to a specific state.
+        We have to calc. the mssb_angle that puts env in that state (the way
+        that's done is a bit messy ...)
+        :param init_state:
+        :return:
+        """
+        # TODO: this needs major cleanup
+        x_pos_array = np.zeros(1000)
+        mssb_array = np.linspace(self.mssb_angle_min, self.mssb_angle_max,
+                                 len(x_pos_array))
+
+        for i, mssb in enumerate(mssb_array):
+            x_pos_array[i], _ = self.get_pos_at_bpm_target(mssb)
+        idx = np.argmin(np.abs(init_state - x_pos_array))
+        return mssb_array[idx]
 
     def reset(self, init_state: float = None,
               init_outside_threshold: bool = False) -> np.ndarray:
@@ -206,12 +204,12 @@ class TargetSteeringEnv2D(gym.Env):
         :return Initial state as np.ndarray
         """
         if init_state is None:
-            self.mssb_angle, self.mbb_angle = self._init_random_state(
-                init_outside_threshold)
+            self.mssb_angle = self._init_random_state(init_outside_threshold)
+        else:
+            self.mssb_angle = self._init_specific_state(init_state)
 
-        x_init, init_intensity = self.get_pos_at_bpm_target(self.mssb_angle,
-                                                            self.mbb_angle)
-        self.state = x_init * self.state_scale
+        x_init, init_intensity = self.get_pos_at_bpm_target(self.mssb_angle)
+        self.state = np.array([x_init * self.state_scale])
 
         # Logging
         self.step_count = 0
@@ -250,23 +248,46 @@ class TargetSteeringEnv2D(gym.Env):
         """
         return -100. * (1. - intensity)
 
-    def get_pos_at_bpm_target(self, mssb_angle, mbb_angle) -> Tuple:
+    def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:
         """ Transports beam through the transfer line and calculates the
         position at the BPM and at the target. These are required for the
         intensity calculation and to get the state based on the currently set
         dipole angle.
         :param total_angle: total kick angle of the MSSB dipole (rad)
         :return position at BPM and intensity as a tuple """
-        # x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
-        # x_target, px_target = transport(
-        #     self.mssb, self.target, self.x0, total_angle)
+        x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
+        x_target, px_target = transport(
+            self.mssb, self.target, self.x0, total_angle)
 
-        x1, px1 = transport(self.mssb, self.mbb, self.x0, mssb_angle)
-        px1 += mbb_angle
+        intensity = self._get_integrated_intensity(x_target)
+        return x_bpm, intensity
 
-        bpm1_x, bpm1_px = transport(self.mbb, self.bpm1, x1, px1)
-        bpm2_x, bpm2_px = transport(self.bpm1, self.bpm2, bpm1_x, bpm1_px)
-        target_x, target_px = transport(self.bpm2, self.target, bpm2_x, bpm2_px)
-        intensity = self._get_integrated_intensity(target_x)
-        state = np.array([bpm1_x, bpm2_x])
-        return state, intensity
+    def get_max_intensity(self) -> float:
+        """ Calculate maximum integrated intensity. This is used to define the
+        threshold for cancellation of an episode. Note that this is potentially
+        not known for all environments.
+        :return maximum integrated intensity """
+        _, _, intensities = self.get_response()
+        return np.max(intensities)
+
+    def get_response(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """ Calculate response of the environment, i.e. the x_position and
+        reward dependence on the dipole kick angle (for the full available
+        range of angles).
+        :return Tuple of np.ndarrays containing dipole angles, x positions,
+        and rewards. """
+        angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 1000)
+        x_pos = np.zeros_like(angles)
+        intensities = np.zeros_like(angles)
+        for i, ang in enumerate(angles):
+            x, intens = self.get_pos_at_bpm_target(total_angle=ang)
+            x_pos[i] = x
+            intensities[i] = intens
+        return angles, x_pos, intensities
+
+    def get_max_n_steps_optimal_behaviour(self) -> int:
+        """ Calculate maximum number of steps required to solve the problem
+        from any initial condition assuming optimal behaviour of agent. This
+        is legacy code of the original discrete action implementation
+        :return upper bound for number of required steps (int). """
+        return 1
