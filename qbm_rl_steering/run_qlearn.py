@@ -1,8 +1,5 @@
-# TODO: NEEDS FIXING ...
-# TODO: group arguments using dicts...
-# TODO: implement double Q
-# TODO: implement replay buffer
-# TODO: parallel core
+# TODO: NEEDS FIXING / UPDATE ... may not work with current QBM
+#  implementation on this branch.
 
 from qbm_rl_steering.environment.target_steering_1d import TargetSteeringEnv
 import qbm_rl_steering.core.qbm as utl
