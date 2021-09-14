@@ -1,21 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from tensorflow.keras.optimizers.schedules import (ExponentialDecay,
+                                                   PolynomialDecay,
+                                                   PiecewiseConstantDecay)
+
 from qbm_rl_steering.core.ddpg_agents import ClassicalDDPG, QuantumDDPG
-from qbm_rl_steering.environment.target_steering_1d import TargetSteeringEnv
 from qbm_rl_steering.environment.rms_env_nd import RmsSteeringEnv
 
 
-# TODO: implement early stopping, epsilon decay, learning schedule more
-#  properly
-# TODO: Implement return values of trainer as dict.
-# TODO: make trainer so generic that it can deal with different envs without
-#  changing few lines every time.
-# TODO: implement n_anneals schedule over time properly.
 def trainer(env, agent, max_episodes, max_steps_per_episode, batch_size,
-            init_action_noise, n_exploration_steps=30,
-            action_noise_decay=False, epsilon=0.3,
-            early_stopping_consecutive=30):
+            action_noise_schedule, epsilon_greedy_schedule, n_anneals_schedule,
+            n_exploration_steps=30, n_episodes_early_stopping=30):
     """ Convenience function to run training with DDPG.
     :param env: openAI gym environment instance
     :param agent: ddpg instance (ClassicalDDPG or QuantumDDPG)
@@ -23,57 +19,52 @@ def trainer(env, agent, max_episodes, max_steps_per_episode, batch_size,
     :param max_steps_per_episode: max. number of steps allowed per episode
     :param batch_size: number of samples drawn from experience replay buffer
     at every step.
-    :param init_action_noise: initial scale of action noise
+    :param action_noise_schedule: action noise decay over time.
+    :param epsilon_greedy_schedule: epsilon-greedy schedule. Decides what
+    fraction of actions will be purely random.
+    :param n_anneals_schedule: number of anneals as training progresses.
     :param n_exploration_steps: number of initial random steps in env.
-    :param action_noise_decay: flag stating whether or not action noise
-    should decay over time.
-    :param epsilon: epsilon-greedy parameter: what fraction of actions will
-    be purely random.
-    :param early_stopping_consecutive: number of consecutive episodes with
+    :param n_episodes_early_stopping: number of consecutive episodes with
     certain number of steps (< 4) to count towards early stopping.
     :return tuple of init, final rewards, number of steps, and random steps
     (all per episode).
     """
-    episode_init_rewards = []
-    episode_final_rewards = []
-    episode_length = []
-    episode_random_steps = []
+    episode_log = {
+        'initial_rewards': [], 'final_rewards': [], 'n_total_steps': [],
+        'n_random_steps': []
+    }
+
     total_step_count = 0
     early_stopping_count = 0
 
     for episode in range(max_episodes):
-        if early_stopping_count >= early_stopping_consecutive:
-            print('STOPPING EARLY...')
+        if early_stopping_count >= n_episodes_early_stopping:
             break
+
         n_count_random_steps = 0
         state = env.reset(init_outside_threshold=True)
-        episode_init_rewards.append(env.calculate_reward(
+        episode_log['initial_rewards'].append(env.calculate_reward(
             env.calculate_state(env.kick_angles)))
 
-        # Linear decay of action noise
-        if action_noise_decay:
-            action_noise = (1. - episode / max_episodes) * init_action_noise
-        else:
-            action_noise = init_action_noise
-
-        # n_meas_for_average. Increase for last 30% of episodes
-        if (episode / float(max_episodes)) > 0.7:
-            print('CHANGING TO 50 AVERAGES')
-            agent.main_critic_net.n_meas_for_average = 50
-            agent.target_critic_net.n_meas_for_average = 50
+        # Apply n_anneals_schedule
+        n_anneals = int(n_anneals_schedule(episode))
+        agent.main_critic_net.n_meas_for_average = n_anneals
+        agent.target_critic_net.n_meas_for_average = n_anneals
 
         # Episode loop
-        epsilon -= epsilon / max_episodes
+        epsilon = epsilon_greedy_schedule(episode)
+
+        # Action noise decay
+        action_noise = action_noise_schedule(episode)
+
         for step in range(max_steps_per_episode):
             eps_sample = np.random.uniform(0, 1, 1)
             if ((total_step_count < n_exploration_steps) or
                     (eps_sample <= epsilon)):
                 action = env.action_space.sample()
-                # print('Sampling randomly')
                 n_count_random_steps += 1
             else:
                 action = agent.get_proposed_action(state, action_noise)
-                # print('Following actor')
 
             total_step_count += 1
             next_state, reward, done, _ = env.step(action)
@@ -81,72 +72,128 @@ def trainer(env, agent, max_episodes, max_steps_per_episode, batch_size,
             agent.replay_buffer.push(state, action, reward, next_state, d_store)
 
             if agent.replay_buffer.size > batch_size:
-                agent.update(batch_size)
+                agent.update(batch_size, episode)
             else:
-                agent.update(agent.replay_buffer.size)
+                agent.update(agent.replay_buffer.size, episode)
 
             if done or step == max_steps_per_episode - 1:
-                episode_final_rewards.append(reward)
+                episode_log['final_rewards'].append(reward)
                 print("*****************************************************")
-                print(f"Episode {episode}: init rew: "
-                      f"{round(episode_init_rewards[-1], 2)} .. final rew: " +
-                      f"{round(episode_final_rewards[-1], 2)} .. steps: "
-                      f"{step + 1} .. of which random: {n_count_random_steps}")
+                print(f"Ep {episode}: "
+                      f"init. rew.: "
+                      f"{round(episode_log['initial_rewards'][-1], 2)} .. "
+                      f"final rew.: "
+                      f"{round(episode_log['final_rewards'][-1], 2)} .. "
+                      f"steps: {step + 1}, of which random:"
+                      f" {n_count_random_steps}")
                 print("*****************************************************\n")
-                episode_length.append(step + 1)
-                episode_random_steps.append(n_count_random_steps)
+                episode_log['n_total_steps'].append(step + 1)
+                episode_log['n_random_steps'].append(n_count_random_steps)
                 if (step < 3) and (reward > env.reward_threshold):
                     early_stopping_count += 1
-                    print(f'COUNTING TOWARDS EARLY STOPPING, CURRENTLY AT: '
-                          f'{early_stopping_count}/{early_stopping_consecutive}')
+                    print(f"Early stopping count: "
+                          f"{early_stopping_count}/"
+                          f"{n_episodes_early_stopping}")
                 else:
                     early_stopping_count = 0
                 break
 
             state = next_state
 
-    return (episode_init_rewards, episode_final_rewards, episode_length,
-            episode_random_steps)
+    return episode_log
 
 
-# TODO: all this needs cleaning up: incl. plots. Also allow to plot
-#  intermediate steps.
-# TODO: implement easy switch between classical and quantum DDPG.
-n_dims = 10
+def evaluator(env, agent, n_episodes):
+    """ Run trained agent for a number of episodes.
+    :param env: openAI gym based environment
+    :param agent: trained agent
+    :param n_episodes: number of episodes for evaluation.
+    :return ndarray with all rewards. """
+    all_rewards = []
+
+    episode = 0
+    while episode < n_episodes:
+        state = env.reset(init_outside_threshold=True)
+
+        rewards = [env.calculate_reward(
+            env.calculate_state(env.kick_angles))]
+
+        n_steps_eps = 0
+        while True:
+            a = agent.get_proposed_action(state, noise_scale=0)
+            state, reward, done, _ = env.step(a)
+            rewards.append(reward)
+            if done or n_steps_eps == (max_steps_per_episode - 1):
+                episode += 1
+                all_rewards.append(rewards)
+                break
+            n_steps_eps += 1
+
+    return np.array(all_rewards)
+
+
+quantum_ddpg = True
+
+n_dims = 6
 max_steps_per_episode = 50
-# thresh = -0.08
 env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
-# env = awake_sim.e_trajectory_simENV()
-# env.action_scale = 3e-4
-# env.threshold = thresh
-# env.MAX_TIME = max_steps
 
-n_episodes = 200  # 80
-batch_size = 24  # 15
-n_exploration_steps = 50  # 30
+n_episodes = 200
+batch_size = 32
+n_exploration_steps = 70
+n_episodes_early_stopping = 25
 
-gamma = 0.99  # 0.95
-tau_critic = 0.1  # 1
-tau_actor = 0.1  # 1
-buffer_maxlen = 10000
-critic_lr = 5e-4  # 1e-3
-actor_lr = 1e-4  # 5e-4
+gamma = 0.99
+tau_critic = 0.1
+tau_actor = 0.1
 
-agent = QuantumDDPG(env.observation_space, env.action_space, gamma,
-                    tau_critic, tau_actor, buffer_maxlen, critic_lr, actor_lr,
-                    grad_clip_actor=10000., grad_clip_critic=1.,
-                    n_steps_estimate=int(n_episodes * max_steps_per_episode / 2.))
+# Learning rate schedules
+# lr_critic: 5e-4, lr_actor: 1e-4
+lr_schedule_critic = ExponentialDecay(5e-4, n_episodes, 0.95)
+lr_schedule_actor = ExponentialDecay(5e-4, n_episodes, 0.95)
 
-init_rewards, final_rewards, episode_length, episode_random_steps = trainer(
-    env, agent, n_episodes, max_steps_per_episode, batch_size, init_action_noise=0.1,
-    # best value so far: 0.1
-    n_exploration_steps=n_exploration_steps, action_noise_decay=True)
+if quantum_ddpg:
+    agent = QuantumDDPG(state_space=env.observation_space,
+                        action_space=env.action_space, gamma=gamma,
+                        tau_critic=tau_critic, tau_actor=tau_actor,
+                        learning_rate_schedule_critic=lr_schedule_critic,
+                        learning_rate_schedule_actor=lr_schedule_actor,
+                        grad_clip_actor=1e4, grad_clip_critic=1.)
+else:
+    agent = ClassicalDDPG(state_space=env.observation_space,
+                          action_space=env.action_space, gamma=gamma,
+                          tau_critic=tau_critic, tau_actor=tau_actor,
+                          learning_rate_schedule_critic=lr_schedule_critic,
+                          learning_rate_schedule_actor=lr_schedule_actor)
 
-fig, axs = plt.subplots(2, 1, sharex=True)
-axs[0].plot(episode_length, label='Total steps')
-axs[0].plot(episode_random_steps, '--', c='k', label='Random steps')
-axs[1].plot(init_rewards, c='r', label='Initial')
-axs[1].plot(final_rewards, c='g', label='Final')
+# Action noise schedule
+action_noise_schedule = PolynomialDecay(0.1, n_episodes, 0.01)
+
+# Number of anneals schedule (first 50%: 1, 50-70%: 20, 70+%: 50 anneals)
+n_anneals_schedule = PiecewiseConstantDecay([0.5*n_episodes, 0.7*n_episodes],
+                                            [1, 20, 50])
+
+# Epsilon greedy schedule
+epsilon_greedy_schedule = PolynomialDecay(0.3, n_episodes, 0.01)
+
+# AGENT TRAINING
+episode_log = trainer(env=env, agent=agent, max_episodes=n_episodes,
+                      max_steps_per_episode=max_steps_per_episode,
+                      batch_size=batch_size,
+                      action_noise_schedule=action_noise_schedule,
+                      epsilon_greedy_schedule=epsilon_greedy_schedule,
+                      n_anneals_schedule=n_anneals_schedule,
+                      n_exploration_steps=n_exploration_steps,
+                      n_episodes_early_stopping=n_episodes_early_stopping)
+
+# PLOT
+# a) Training log
+fig1, axs = plt.subplots(2, 1, sharex=True)
+axs[0].plot(episode_log['n_total_steps'], label='Total steps')
+axs[0].plot(episode_log['n_random_steps'], '--', c='k', label='Random steps')
+axs[1].plot(episode_log['initial_rewards'], c='r', label='Initial')
+axs[1].plot(episode_log['final_rewards'], c='g', label='Final')
+
 axs[0].set_ylabel('Number of steps')
 axs[1].set_ylabel('Reward')
 axs[1].set_xlabel('Episodes')
@@ -155,6 +202,8 @@ axs[1].legend(loc='lower left')
 plt.tight_layout()
 plt.show()
 
+# b) AgentL q before vs after
+fig2 = plt.figure()
 plt.plot(np.array(agent.q_log['before']), c='r', label='q before')
 plt.plot(np.array(agent.q_log['after']), c='g', label='q after')
 plt.legend()
@@ -163,103 +212,61 @@ plt.xlabel('Steps')
 plt.tight_layout()
 plt.show()
 
+# c) Agent: q_after minus q_before
+fig3 = plt.figure()
 plt.plot(np.array(agent.q_log['after']) - np.array(agent.q_log['before']))
 plt.ylabel(r'$Q_{{f}} - Q_{{i}}$')
 plt.xlabel('Steps')
 plt.tight_layout()
 plt.show()
 
-# Agent evaluation
-n_episodes_eval = 80
-episode_counter = 0
-
-rewards_eval = []
-env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
-# env = awake_sim.e_trajectory_simENV()
-# env.action_scale = 3e-4
-# env.threshold = thresh
-# env.MAX_TIME = max_steps
-
-while episode_counter < n_episodes_eval:
-    state = env.reset()
-    state = np.atleast_2d(state)
-    reward_ep = []
-    reward_ep.append(env.calculate_reward(
-        env.calculate_state(env.kick_angles)))
-
-    n_steps_eps = 0
-    while True:
-        a = agent.get_proposed_action(state, noise_scale=0)
-        a = np.squeeze(a)
-        state, reward, done, _ = env.step(a)
-        reward_ep.append(reward)
-        if done or n_steps_eps > max_steps_per_episode:
-            episode_counter += 1
-            rewards_eval.append(reward_ep)
-            break
-        n_steps_eps += 1
-
-rewards_eval = np.array(rewards_eval)
-
-fig, axs = plt.subplots(2, 1, sharex=True)
-init_rew = np.zeros(len(rewards_eval))
-final_rew = np.zeros(len(rewards_eval))
-length = np.zeros(len(rewards_eval))
-for i in range(len(rewards_eval)):
-    init_rew[i] = rewards_eval[i][0]
-    final_rew[i] = rewards_eval[i][-1]
-    length[i] = len(rewards_eval[i]) - 1
-
-axs[1].plot(init_rew, c='r', label='Initial')
-axs[1].plot(final_rew, c='g', label='Final')
-axs[0].plot(length)
-axs[0].set_ylabel('Number of steps')
-axs[1].set_ylabel('Reward')
-axs[1].set_xlabel('Episodes')
-axs[1].legend(loc='lower left')
-plt.tight_layout()
-plt.show()
-
-# PLOTTING ALL REWARDS
-cmap = plt.get_cmap("magma")
-fig, axs = plt.subplots(2, 1, sharex=True)
-init_rew = np.zeros(len(rewards_eval))
-final_rew = np.zeros(len(rewards_eval))
-length = np.zeros(len(rewards_eval))
-all_rewards = np.zeros((len(rewards_eval), max_steps_per_episode))
-
-# max_required = 0
-# for i in range(len(rewards_eval)):
-#     init_rew[i] = rewards_eval[i][0]
-#     final_rew[i] = rewards_eval[i][-1]
-#     length[i] = len(rewards_eval[i]) - 1
-#     all_rewards[i, :len(rewards_eval[i])] = rewards_eval[i]
-#
-#     if len(rewards_eval[i]) > max_required:
-#         max_required = len(rewards_eval[i])
-#
-# for j in range(max_required):
-#     # msk = all_rewards[:, j] == 0
-#     axs[1].plot(all_rewards[:, j], c=cmap(j/max_required), alpha=0.7)
-
-axs[1].plot(init_rew, c='r', label='Initial')
-axs[1].plot(final_rew, c='g', label='Final')
-axs[0].plot(length)
-axs[0].set_ylabel('Number of steps')
-axs[1].set_ylabel('Reward')
-axs[1].set_xlabel('Episodes')
-axs[1].legend(loc='lower left')
-# axs[1].set_ylim(top=-1)
-plt.tight_layout()
-plt.show()
-
-# GRADIENTS
-plt.figure()
+# d) Agent: gradients evolution
+fig4 = plt.figure()
 plt.plot(agent.actor_grads_log['mean'], label='mean')
 plt.plot(agent.actor_grads_log['min'], label='min')
 plt.plot(agent.actor_grads_log['max'], label='max')
 plt.ylabel('Grads')
 plt.xlabel('Steps')
 plt.legend()
+plt.tight_layout()
+plt.show()
+
+# AGENT EVALUATION
+env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
+episode_log = evaluator(env, agent, n_episodes=80)
+
+# a) Evaluation log
+fig5, axs = plt.subplots(2, 1, sharex=True)
+axs[0].plot([(len(r) - 1) for r in episode_log])
+axs[1].plot([r[0] for r in episode_log], c='r', label='Initial')
+axs[1].plot([r[-1] for r in episode_log], c='g', label='Final')
+axs[0].set_ylabel('Number of steps')
+axs[1].set_ylabel('Reward')
+axs[1].set_xlabel('Episodes')
+axs[1].legend(loc='lower left')
+plt.tight_layout()
+plt.show()
+
+# b) Extract and plot all intermediate rewards
+all_rewards = np.zeros((len(episode_log), max_steps_per_episode + 1))
+
+cmap = plt.get_cmap("magma")
+fig6, axs = plt.subplots(2, 1, sharex=True)
+
+max_steps = 0
+for i in range(len(episode_log)):
+    all_rewards[i, :len(episode_log[i])] = episode_log[i]
+    if len(episode_log[i]) > max_steps:
+        max_steps = len(episode_log[i])
+
+axs[0].plot([(len(r) - 1) for r in episode_log])
+for j in range(max_steps):
+    axs[1].plot(all_rewards[:, j], c=cmap(j/max_steps), alpha=0.7)
+axs[1].plot([r[0] for r in episode_log], c='r', label='Initial')
+axs[1].plot([r[-1] for r in episode_log], c='g', label='Final')
+axs[0].set_ylabel('Number of steps')
+axs[1].set_ylabel('Reward')
+axs[1].set_xlabel('Episodes')
+axs[1].legend(loc='lower left')
 plt.tight_layout()
 plt.show()

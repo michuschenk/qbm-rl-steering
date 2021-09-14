@@ -2,7 +2,6 @@
 # https://deeplearningcourses.com/c/cutting-edge-artificial-intelligence
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
 from qbm_rl_steering.core.utils import (generate_classical_critic,
                                         generate_classical_actor)
@@ -16,10 +15,8 @@ from qbm_rl_steering.core.qbm import QFunction
 
 
 class ClassicalDDPG:
-    def __init__(self, state_space, action_space, gamma,
-                 tau_critic, tau_actor, buffer_size,
-                 critic_init_learning_rate, actor_init_learning_rate,
-                 n_steps_estimate=1000):
+    def __init__(self, state_space, action_space, gamma, tau_critic, tau_actor,
+                 learning_rate_schedule_critic, learning_rate_schedule_actor):
         """ Implements the classical DDPG agent where both actor and critic
         are represented by classical neural networks.
         :param state_space: openAI gym env state space
@@ -27,29 +24,20 @@ class ClassicalDDPG:
         :param gamma: reward discount factor
         :param tau_critic: soft update factor for critic target network
         :param tau_actor: soft update factor for actor target network
-        :param buffer_size: max. size of replay buffer, not to be confused
-        with batch_size.
-        :param critic_init_learning_rate: initial learning rate of critic,
-        may decay over time.
-        :param actor_init_learning_rate: initial learning rate of actor,
-        may decay over time.
-        :param n_steps_estimate: estimated total number of training steps,
-        needed for learning rate schedules (would like to get rid of this).
+        :param learning_rate_schedule_critic: learning rate schedule for critic.
+        :param learning_rate_schedule_actor: learning rate schedule for actor.
         """
         self.n_dims_state_space = len(state_space.high)
         self.n_dims_action_space = len(action_space.high)
-
-        self.step = 0
 
         # Some main hyperparameters
         self.gamma = gamma
         self.tau_critic = tau_critic
         self.tau_actor = tau_actor
 
-        self.lr_schedule_critic = ExponentialDecay(
-            critic_init_learning_rate, n_steps_estimate, 1.)
-        self.lr_schedule_actor = ExponentialDecay(
-            actor_init_learning_rate, n_steps_estimate, 1.)
+        # Learning rate schedules
+        self.lr_schedule_critic = learning_rate_schedule_critic
+        self.lr_schedule_actor = learning_rate_schedule_actor
 
         # Main and target actor network initialization
         # ACTOR
@@ -82,7 +70,7 @@ class ClassicalDDPG:
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
-            size=buffer_size, obs_dim=self.n_dims_state_space,
+            size=int(1e6), obs_dim=self.n_dims_state_space,
             act_dim=self.n_dims_action_space)
 
         # For logging
@@ -121,8 +109,6 @@ class ClassicalDDPG:
 
         # Apply Polyak updates
         self._update_target_networks()
-
-        self.step += 1
 
     def _update_critic(self, state, action, reward, next_state):
         """ Update the main critic network based on given batch of input
@@ -211,11 +197,10 @@ class ClassicalDDPG:
 
 
 class QuantumDDPG:
-    def __init__(self, state_space, action_space, gamma,
-                 tau_critic, tau_actor, buffer_size,
-                 critic_init_learning_rate, actor_init_learning_rate,
-                 grad_clip_actor=20, grad_clip_critic=1.,
-                 n_steps_estimate=1000):
+    def __init__(self, state_space, action_space, gamma, tau_critic,
+                 tau_actor, learning_rate_schedule_critic,
+                 learning_rate_schedule_actor, grad_clip_actor=20,
+                 grad_clip_critic=1.):
         """ Implements quantum DDPG where actor and critic networks are
         represented by quantum Boltzmann machines and classical neural
         networks, respectively.
@@ -224,12 +209,8 @@ class QuantumDDPG:
         :param gamma: reward discount factor
         :param tau_critic: soft update factor for critic target network
         :param tau_actor: soft update factor for actor target network
-        :param buffer_size: max. size of replay buffer, not to be confused
-        with batch_size.
-        :param critic_init_learning_rate: initial learning rate of critic,
-        may decay over time.
-        :param actor_init_learning_rate: initial learning rate of actor,
-        may decay over time.
+        :param learning_rate_schedule_critic: learning rate schedule for critic.
+        :param learning_rate_schedule_actor: learning rate schedule for actor.
         :param grad_clip_actor: limits to which actor gradients are clipped
         :param grad_clip_critic: limits to which critic gradients are clipped
         :param n_steps_estimate: estimated total number of training steps,
@@ -238,17 +219,14 @@ class QuantumDDPG:
         self.n_dims_state_space = len(state_space.high)
         self.n_dims_action_space = len(action_space.high)
 
-        self.step = 0
-
         # Main hyperparameters
         self.gamma = gamma
         self.tau_critic = tau_critic
         self.tau_actor = tau_actor
 
-        self.lr_schedule_critic = ExponentialDecay(
-            critic_init_learning_rate, n_steps_estimate, 1.)
-        self.lr_schedule_actor = ExponentialDecay(
-            actor_init_learning_rate, n_steps_estimate, 1.)
+        # Learning rate schedules
+        self.lr_schedule_critic = learning_rate_schedule_critic
+        self.lr_schedule_actor = learning_rate_schedule_actor
 
         kwargs_q_func = dict(
             sampler_type='SQA',
@@ -292,7 +270,7 @@ class QuantumDDPG:
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
-            size=buffer_size, obs_dim=self.n_dims_state_space,
+            size=int(1e6), obs_dim=self.n_dims_state_space,
             act_dim=self.n_dims_action_space)
 
         # For logging
@@ -309,7 +287,7 @@ class QuantumDDPG:
         action += noise_scale * np.random.randn(self.n_dims_action_space)
         return np.clip(action, -1., 1.)
 
-    def update(self, batch_size):
+    def update(self, batch_size, episode_count):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
@@ -318,7 +296,7 @@ class QuantumDDPG:
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
 
-        self._update_critic(s, a, r, s2)
+        self._update_critic(s, a, r, s2, episode_count)
         self._update_actor(s, batch_size)
 
         # Evaluate Q value for new actor (providing same state, should now
@@ -331,9 +309,7 @@ class QuantumDDPG:
         # Apply Polyak updates
         self._update_target_networks()
 
-        self.step += 1
-
-    def _update_critic(self, state, action, reward, next_state):
+    def _update_critic(self, state, action, reward, next_state, episode_count):
         """ Update the main critic network based on given batch of input
         states. """
         next_action = self.target_actor_net(next_state)
@@ -357,7 +333,7 @@ class QuantumDDPG:
             self.main_critic_net.update_weights(
                 spin_configs, visible_nodes, q_value, next_q_value,
                 reward[jj],
-                learning_rate=self.lr_schedule_critic(self.step).numpy(),
+                learning_rate=self.lr_schedule_critic(episode_count).numpy(),
                 grad_clip=self.grad_clip_critic)
 
     def _update_actor(self, state, batch_size):
