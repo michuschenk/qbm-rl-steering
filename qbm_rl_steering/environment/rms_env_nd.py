@@ -220,10 +220,22 @@ class RmsSteeringEnv(gym.Env):
 
             if not init_outside_threshold:
                 break
-
         return temp_angles
 
-    def reset(self, init_outside_threshold: bool = False) -> np.ndarray:
+    def _init_specific_reward(self, init_reward: float, margin: float = 10.):
+        self.kick_angles = [None] * self.n_dims
+        temp_angles = None
+        temp_reward = 1e39
+        while abs(temp_reward - init_reward) > margin:
+            temp_angles = np.random.uniform(
+                low=self.kick_angle_min, high=self.kick_angle_max,
+                size=self.n_dims)
+            x_init = self.calculate_state(temp_angles)
+            temp_reward = self.calculate_reward(x_init)
+        return temp_angles
+
+    def reset(self, init_outside_threshold: bool = False,
+              init_specific_reward_state: float = None) -> np.ndarray:
         """
         Reset the environment: initialize self.kick_angles, get initial
         state, step_count to 0, and reset logger. This method gets called
@@ -231,9 +243,16 @@ class RmsSteeringEnv(gym.Env):
         :param init_outside_threshold: bool flag. If True, will only accept
         random initial state outside of reward threshold. If False accept
         any initial state. See _init_random_state(..) method.
+        :param init_specific_reward_state: can specify a specific reward that
+        you want the env to start in (note that the state is typically not well
+        defined.
         :return Initial state as np.ndarray of dim self.n_dims.
         """
-        self.kick_angles = self._init_random_state(init_outside_threshold)
+        if init_specific_reward_state:
+            self.kick_angles = self._init_specific_reward(
+                init_specific_reward_state)
+        else:
+            self.kick_angles = self._init_random_state(init_outside_threshold)
 
         x_init = self.calculate_state(self.kick_angles)
         self.state = x_init * self.state_scale
