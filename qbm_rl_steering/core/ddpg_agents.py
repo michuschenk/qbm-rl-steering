@@ -4,8 +4,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
-from qbm_rl_steering.core.classical_models import (generate_classical_critic,
-                                                   generate_classical_actor)
+from qbm_rl_steering.core.utils import (generate_classical_critic,
+                                        generate_classical_actor)
 from qbm_rl_steering.core.utils import ReplayBuffer
 from qbm_rl_steering.core.qbm import QFunction
 

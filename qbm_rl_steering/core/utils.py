@@ -1,4 +1,6 @@
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense, concatenate
 
 
 class ReplayBuffer:
@@ -32,34 +34,38 @@ class ReplayBuffer:
                 temp_dict['s2'], temp_dict['d'])
 
 
-# import numpy as np
-#
-#
-# class Memory:
-#     """ A FIFO experience replay buffer.
-#     """
-#
-#     def __init__(self, obs_dim, act_dim, size):
-#         self.states = np.zeros([size, obs_dim], dtype=np.float32)
-#         self.actions = np.zeros([size, act_dim], dtype=np.float32)
-#         self.rewards = np.zeros(size, dtype=np.float32)
-#         self.next_states = np.zeros([size, obs_dim], dtype=np.float32)
-#         self.dones = np.zeros(size, dtype=np.float32)
-#         self.ptr, self.size, self.max_size = 0, 0, size
-#
-#     def store(self, state, action, reward, next_state, done):
-#         self.states[self.ptr] = state
-#         self.next_states[self.ptr] = next_state
-#         self.actions[self.ptr] = action
-#         self.rewards[self.ptr] = reward
-#         self.dones[self.ptr] = done
-#         self.ptr = (self.ptr + 1) % self.max_size
-#         self.size = min(self.size + 1, self.max_size)
-#
-#     def get_sample(self, batch_size=32):
-#         # if self.size < batch_size:
-#         #     idxs = np.random.randint(0, self.size, size=self.size)
-#         # else:
-#         idxs = np.random.randint(0, self.size, size=batch_size)
-#         return (self.states[idxs], self.actions[idxs], self.rewards[idxs],
-#                 self.next_states[idxs], self.dones[idxs])
+# Generator functions for classical actor and critic models
+def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int,
+                              hidden_layers: list):
+    """ Initializes DDPG critic network represented by classical neural
+    network.
+    :param n_dims_state_space: number of dimensions of state space.
+    :param n_dims_action_space: number of dimensions of action space.
+    :param hidden_layers: list of number of nodes per hidden layer.
+    :return: keras dense feed-forward network model. """
+    input_state = Input(shape=n_dims_state_space)
+    input_action = Input(shape=n_dims_action_space)
+    x = input_state
+    for i, j in enumerate(hidden_layers[:-1]):
+        if i == 1:
+            x = concatenate([x, input_action], axis=-1)
+        x = Dense(j, activation='relu')(x)
+    x = Dense(hidden_layers[-1])(x)
+
+    return tf.keras.Model([input_state, input_action], x)
+
+
+def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int,
+                             hidden_layers: list):
+    """ Initializes DDPG actor network represented by classical neural
+    network.
+    :param n_dims_state_space: number of dimensions of state space.
+    :param n_dims_action_space: number of dimensions of action space.
+    :param hidden_layers: list of number of nodes per hidden layer.
+    :return: keras dense feed-forward network model. """
+    input_state = Input(shape=n_dims_state_space)
+    x = input_state
+    for i in hidden_layers:
+        x = Dense(i, activation='relu')(x)
+    x = Dense(n_dims_action_space, activation='tanh')(x)
+    return tf.keras.Model(input_state, x)

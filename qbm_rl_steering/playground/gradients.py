@@ -1,5 +1,5 @@
 import numpy as np
-from qbm_rl_steering.core.qac import QuantumActorCritic
+from qbm_rl_steering.core._not_maintained_qac import QuantumActorCritic
 from cern_awake_env.simulation import SimulationEnv
 import matplotlib.pyplot as plt
 
