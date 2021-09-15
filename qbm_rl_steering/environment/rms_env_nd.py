@@ -222,7 +222,7 @@ class RmsSteeringEnv(gym.Env):
                 break
         return temp_angles
 
-    def _init_specific_reward(self, init_reward: float, margin: float = 10.):
+    def _init_specific_reward(self, init_reward: float, margin: float = 5.):
         self.kick_angles = [None] * self.n_dims
         temp_angles = None
         temp_reward = 1e39
