@@ -113,12 +113,18 @@ def evaluator(env, agent, n_episodes, reward_scan=True):
     :return ndarray with all rewards. """
     all_rewards = []
 
-    episode = 0
+    if reward_scan:
+        kick_max = np.array([env.kick_angle_max] * env.n_dims)
+        rew_1 = env.calculate_reward(env.calculate_state(kick_max))
+        kick_min = np.array([env.kick_angle_min] * env.n_dims)
+        rew_2 = env.calculate_reward(env.calculate_state(kick_min))
+        min_reward = min(rew_1, rew_2) * 0.9
 
+    episode = 0
     while episode < n_episodes:
         if reward_scan:
             target_init_rewards = np.linspace(
-                env.reward_threshold * 4, env.reward_threshold, n_episodes)
+                min_reward, env.reward_threshold, n_episodes)
             state = env.reset(
                 init_specific_reward_state=target_init_rewards[episode])
         else:
@@ -229,23 +235,22 @@ def plot_evaluation_log(env, max_steps_per_episode, data):
 
 quantum_ddpg = True
 
-n_dims = 3
+n_dims = 4
 max_steps_per_episode = 50
 env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
 
 n_episodes = 200
 batch_size = 32
-n_exploration_steps = 70
-n_episodes_early_stopping = 25
+n_exploration_steps = 50
+n_episodes_early_stopping = 30
 
-gamma = 0.99
-tau_critic = 0.1
-tau_actor = 0.1
+gamma = 0.999
+tau_critic = 0.05  # 0.1
+tau_actor = 0.05  # 0.1
 
-# Learning rate schedules
-# lr_critic: 5e-4, lr_actor: 1e-4
+# Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
 lr_schedule_critic = ExponentialDecay(1e-3, n_episodes, 0.95)
-lr_schedule_actor = ExponentialDecay(1e-3, n_episodes, 0.95)
+lr_schedule_actor = ExponentialDecay(5e-4, n_episodes, 0.95)
 
 if quantum_ddpg:
     agent = QuantumDDPG(state_space=env.observation_space,
@@ -261,16 +266,11 @@ else:
                           learning_rate_schedule_critic=lr_schedule_critic,
                           learning_rate_schedule_actor=lr_schedule_actor)
 
-# Action noise schedule
 action_noise_schedule = PolynomialDecay(0.1, n_episodes, 0.01)
-
-# Number of anneals schedule (first 50%: 1, 50-70%: 20, 70+%: 50 anneals)
+epsilon_greedy_schedule = PolynomialDecay(0.3, n_episodes, 0.0)
 n_anneals_schedule = PiecewiseConstantDecay(
     [0.5 * n_episodes, 0.7 * n_episodes],
-    [1, 20, 50])
-
-# Epsilon greedy schedule
-epsilon_greedy_schedule = PolynomialDecay(0.3, n_episodes, 0.01)
+    [1, 5, 50])
 
 # AGENT TRAINING
 episode_log = trainer(env=env, agent=agent, max_episodes=n_episodes,
