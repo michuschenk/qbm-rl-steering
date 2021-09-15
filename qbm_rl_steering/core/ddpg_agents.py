@@ -97,8 +97,14 @@ class ClassicalDDPG:
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
 
-        self._update_critic(s, a, r, s2)
-        self._update_actor(s, batch_size)
+        grads_critic = self._get_gradients_critic(s, a, r, s2)
+        grads_actor = self._get_gradients_actor(s, batch_size)
+
+        # Simultaneous update of actor and critic
+        self.critic_optimizer.apply_gradients(
+            zip(grads_critic, self.main_critic_net.trainable_variables))
+        self.actor_optimizer.apply_gradients(
+            zip(grads_actor, self.main_actor_net.trainable_variables))
 
         # This is for debugging only, i.e. not required for algorithm
         # to work: evaluate Q value for actor after update: providing same
@@ -110,7 +116,7 @@ class ClassicalDDPG:
         # Apply Polyak updates
         self._update_target_networks()
 
-    def _update_critic(self, state, action, reward, next_state):
+    def _get_gradients_critic(self, state, action, reward, next_state):
         """ Update the main critic network based on given batch of input
         states. """
         with tf.GradientTape() as tape:
@@ -122,11 +128,11 @@ class ClassicalDDPG:
 
         grads_q = tape.gradient(
             q_loss, self.main_critic_net.trainable_variables)
-        self.critic_optimizer.apply_gradients(
-            zip(grads_q, self.main_critic_net.trainable_variables))
         self.losses_log['Q'].append(q_loss)
 
-    def _update_actor(self, states, batch_size):
+        return grads_q
+
+    def _get_gradients_actor(self, states, batch_size):
         """ Update the main actor network based on given batch of input
         states. """
         # with tf.GradientTape() as tape2:
@@ -162,9 +168,6 @@ class ClassicalDDPG:
             on_batch /= batch_size
             grads_mu.append(-on_batch)
 
-        self.actor_optimizer.apply_gradients(
-            zip(grads_mu, self.main_actor_net.trainable_variables))
-
         # Just for logging
         mean_ = 0.
         min_ = 1E39
@@ -178,6 +181,8 @@ class ClassicalDDPG:
         self.actor_grads_log['min'].append(min_)
         self.actor_grads_log['max'].append(max_)
         self.actor_grads_log['mean'].append(mean_)
+
+        return grads_mu
 
     def _update_target_networks(self):
         """ Apply Polyak update to both target networks. """
@@ -296,8 +301,13 @@ class QuantumDDPG:
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
 
+        # Invert order since _update_critic will directly apply gradient update
+        # while _get_gradients_actor does not.
+        # This is to ensure simultaneous update of actor and critic
+        grads_actor = self._get_gradients_actor(s, batch_size)
         self._update_critic(s, a, r, s2, episode_count)
-        self._update_actor(s, batch_size)
+        self.actor_optimizer.apply_gradients(
+            zip(grads_actor, self.main_actor_net.trainable_variables))
 
         # Evaluate Q value for new actor (providing same state, should now
         # give higher Q)
@@ -320,10 +330,8 @@ class QuantumDDPG:
             q_value, spin_configs, visible_nodes = (
                 self.main_critic_net.calculate_q_value(state[jj], action[jj]))
 
-            # Now calculate the next_q_value of the greedy action, without
-            # actually taking the action (to take actions in env.,
-            # we don't follow purely greedy action).
-            next_q_value, spin_configurations, visible_nodes = (
+            # Now calculate the target_q_value of action proposed by the actor
+            target_q_value, spin_configurations, visible_nodes = (
                 self.target_critic_net.calculate_q_value(
                     state=next_state[jj], action=next_action[jj]))
 
@@ -331,12 +339,12 @@ class QuantumDDPG:
             # Note that clipping is also done inside QBM update_weights
             # method ...
             self.main_critic_net.update_weights(
-                spin_configs, visible_nodes, q_value, next_q_value,
+                spin_configs, visible_nodes, q_value, target_q_value,
                 reward[jj],
                 learning_rate=self.lr_schedule_critic(episode_count).numpy(),
                 grad_clip=self.grad_clip_critic)
 
-    def _update_actor(self, state, batch_size):
+    def _get_gradients_actor(self, state, batch_size):
         """ Update the main actor network based on given batch of input
         states. """
         with tf.GradientTape() as tape2:
@@ -362,9 +370,6 @@ class QuantumDDPG:
                                a_max=self.grad_clip_actor)
             grads_mu.append(-on_batch)
 
-        self.actor_optimizer.apply_gradients(
-            zip(grads_mu, self.main_actor_net.trainable_variables))
-
         # For logging
         mean_ = 0.
         min_ = 1E39
@@ -378,6 +383,8 @@ class QuantumDDPG:
         self.actor_grads_log['min'].append(min_)
         self.actor_grads_log['max'].append(max_)
         self.actor_grads_log['mean'].append(mean_)
+
+        return grads_mu
 
     def _update_target_networks(self):
         """ Apply Polyak update to both target networks. """
