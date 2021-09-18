@@ -1,5 +1,11 @@
+import datetime
+import os
+import shutil
+import pickle
+
+import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 
 from tensorflow.keras.optimizers.schedules import (ExponentialDecay,
                                                    PolynomialDecay,
@@ -7,289 +13,415 @@ from tensorflow.keras.optimizers.schedules import (ExponentialDecay,
 
 from qbm_rl_steering.core.ddpg_agents import ClassicalDDPG, QuantumDDPG
 from qbm_rl_steering.environment.rms_env_nd import RmsSteeringEnv
+from qbm_rl_steering.core.run_utils import (trainer, evaluator,
+                                            plot_training_log,
+                                            plot_evaluation_log)
 
 
-def trainer(env, agent, max_episodes, max_steps_per_episode, batch_size,
-            action_noise_schedule, epsilon_greedy_schedule, n_anneals_schedule,
-            n_exploration_steps=30, n_episodes_early_stopping=30):
-    """ Convenience function to run training with DDPG.
-    :param env: openAI gym environment instance
-    :param agent: ddpg instance (ClassicalDDPG or QuantumDDPG)
-    :param max_episodes: max. number of episodes that training will run
-    :param max_steps_per_episode: max. number of steps allowed per episode
-    :param batch_size: number of samples drawn from experience replay buffer
-    at every step.
-    :param action_noise_schedule: action noise decay over time.
-    :param epsilon_greedy_schedule: epsilon-greedy schedule. Decides what
-    fraction of actions will be purely random.
-    :param n_anneals_schedule: number of anneals as training progresses.
-    :param n_exploration_steps: number of initial random steps in env.
-    :param n_episodes_early_stopping: number of consecutive episodes with
-    certain number of steps (< 4) to count towards early stopping.
-    :return tuple of init, final rewards, number of steps, and random steps
-    (all per episode).
-    """
-    episode_log = {
-        'initial_rewards': [], 'final_rewards': [], 'n_total_steps': [],
-        'n_random_steps': []
-    }
+def run_full(params):
+    env = RmsSteeringEnv(**params['env'])
 
-    total_step_count = 0
-    early_stopping_count = 0
+    # Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
+    lr_schedule_critic = ExponentialDecay(params['lr_critic']['init'],
+                                          params['n_episodes'],
+                                          params['lr_critic']['decay_factor'])
+    lr_schedule_actor = ExponentialDecay(params['lr_actor']['init'],
+                                         params['n_episodes'],
+                                         params['lr_actor']['decay_factor'])
 
-    for episode in range(max_episodes):
-        if early_stopping_count >= n_episodes_early_stopping:
-            break
+    if params['quantum_ddpg']:
+        agent = QuantumDDPG(state_space=env.observation_space,
+                            action_space=env.action_space,
+                            learning_rate_schedule_critic=lr_schedule_critic,
+                            learning_rate_schedule_actor=lr_schedule_actor,
+                            grad_clip_actor=1e4, grad_clip_critic=1.,
+                            **params['agent'])
+    else:
+        agent = ClassicalDDPG(state_space=env.observation_space,
+                              action_space=env.action_space,
+                              learning_rate_schedule_critic=lr_schedule_critic,
+                              learning_rate_schedule_actor=lr_schedule_actor,
+                              **params['agent'])
 
-        n_count_random_steps = 0
-        state = env.reset(init_outside_threshold=True)
-        episode_log['initial_rewards'].append(env.calculate_reward(
-            env.calculate_state(env.kick_angles)))
+    # Action noise schedule
+    action_noise_schedule = PolynomialDecay(
+        params['action_noise']['init'], params['n_episodes'],
+        params['action_noise']['final'])
 
-        # Apply n_anneals_schedule
-        n_anneals = int(n_anneals_schedule(episode))
-        agent.main_critic_net.n_meas_for_average = n_anneals
-        agent.target_critic_net.n_meas_for_average = n_anneals
+    # Epsilon greedy schedule
+    epsilon_greedy_schedule = PolynomialDecay(
+        params['epsilon_greedy']['init'], params['n_episodes'],
+        params['epsilon_greedy']['final'])
 
-        # Episode loop
-        epsilon = epsilon_greedy_schedule(episode)
+    # Schedule n_anneals
+    t_transition = [int(x * params['n_episodes']) for x in
+                    np.linspace(0, 1., params['anneals']['n_pieces'] + 1)][1:-1]
+    y_transition = [int(n) for n in np.linspace(params['anneals']['init'],
+                                                params['anneals']['final'],
+                                                params['anneals']['n_pieces'])]
+    n_anneals_schedule = PiecewiseConstantDecay(t_transition, y_transition)
 
-        # Action noise decay
-        action_noise = action_noise_schedule(episode)
+    # PREPARE OUTPUT FOLDER
+    date_time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    out_path = './runs/' + date_time_now
+    os.makedirs(out_path)
+    shutil.copy('./run_ddpg.py', out_path + '/run_ddpg.py')
+    shutil.copy('./core/ddpg_agents.py', out_path + '/ddpg_agents.py')
+    shutil.copy('./environment/rms_env_nd.py', out_path + '/rms_env_nd.py')
+    with open(out_path + '/params_dict.pkl', 'wb') as fid:
+        pickle.dump(params, fid)
 
-        for step in range(max_steps_per_episode):
-            eps_sample = np.random.uniform(0, 1, 1)
-            if ((total_step_count < n_exploration_steps) or
-                    (eps_sample <= epsilon)):
-                action = env.action_space.sample()
-                n_count_random_steps += 1
-            else:
-                action = agent.get_proposed_action(state, action_noise)
+    # AGENT TRAINING
+    episode_log = trainer(
+        env=env, agent=agent, action_noise_schedule=action_noise_schedule,
+        epsilon_greedy_schedule=epsilon_greedy_schedule,
+        n_anneals_schedule=n_anneals_schedule, n_episodes=params['n_episodes'],
+        max_steps_per_episode=params['env']['max_steps_per_episode'],
+        **params['trainer'])
+    plot_training_log(env, agent, episode_log, save_path=out_path)
+    df_train_log = pd.DataFrame(episode_log)
+    df_train_log.to_csv(out_path + '/train_log')
 
-            total_step_count += 1
-            next_state, reward, done, _ = env.step(action)
-            d_store = False if step == max_steps_per_episode - 1 else done
-            agent.replay_buffer.push(state, action, reward, next_state, d_store)
+    # AGENT EVALUATION
+    # a) Random state inits
+    env = RmsSteeringEnv(**params['env'])
+    episode_log = evaluator(env, agent, n_episodes=100, reward_scan=False)
+    try:
+        df_eval_log = pd.DataFrame({'rewards': episode_log})
+    except ValueError:
+        print('Issue creating eval df ... probably all evaluations '
+              'used '
+              'same number of steps')
+        n_stp = episode_log.shape[1]
+        res_dict = {}
+        for st in range(n_stp):
+            res_dict[f'step_{st}'] = episode_log[:, st]
+        df_eval_log = pd.DataFrame(res_dict)
 
-            if agent.replay_buffer.size > batch_size:
-                agent.update(batch_size, episode)
-            else:
-                agent.update(agent.replay_buffer.size, episode)
+    df_eval_log.to_csv(out_path + '/eval_log_random')
+    plot_evaluation_log(env, params['env']['max_steps_per_episode'],
+                        episode_log,
+                        save_path=out_path, type='random')
 
-            if done or step == max_steps_per_episode - 1:
-                episode_log['final_rewards'].append(reward)
-                print("*****************************************************")
-                print(f"Ep {episode}: "
-                      f"init. rew.: "
-                      f"{round(episode_log['initial_rewards'][-1], 2)} .. "
-                      f"final rew.: "
-                      f"{round(episode_log['final_rewards'][-1], 2)} .. "
-                      f"steps: {step + 1}, of which random:"
-                      f" {n_count_random_steps}")
-                print("*****************************************************\n")
-                episode_log['n_total_steps'].append(step + 1)
-                episode_log['n_random_steps'].append(n_count_random_steps)
-                if (step < 3) and (reward > env.reward_threshold):
-                    early_stopping_count += 1
-                    print(f"Early stopping count: "
-                          f"{early_stopping_count}/"
-                          f"{n_episodes_early_stopping}")
-                else:
-                    early_stopping_count = 0
-                break
+    # b) Systematic state inits
+    env = RmsSteeringEnv(**params['env'])
+    episode_log = evaluator(env, agent, n_episodes=100, reward_scan=True)
+    try:
+        df_eval_log = pd.DataFrame({'rewards': episode_log})
+    except ValueError:
+        print('Issue creating eval df ... probably all evaluations used '
+              'same number of steps')
+        n_stp = episode_log.shape[1]
+        res_dict = {}
+        for st in range(n_stp):
+            res_dict[f'step_{st}'] = episode_log[:, st]
+        df_eval_log = pd.DataFrame(res_dict)
 
-            state = next_state
+    df_eval_log.to_csv(out_path + '/eval_log_scan')
+    plot_evaluation_log(env, params['env']['max_steps_per_episode'],
+                        episode_log,
+                        save_path=out_path, type='scan')
 
+    # TODO: clean up... for now return the results from the scan evaluation
     return episode_log
 
 
-def evaluator(env, agent, n_episodes, reward_scan=True):
-    """ Run trained agent for a number of episodes.
-    :param env: openAI gym based environment
-    :param agent: trained agent
-    :param n_episodes: number of episodes for evaluation.
-    :param reward_scan: if False, init episodes randomly. If True, run scan
-    in specific range of rewards.
-    :return ndarray with all rewards. """
-    all_rewards = []
+# TODO: parameters to consider: 1) epsilon (init and final). 2) gradient
+#  calculation epsilon. 3) max_steps_per_episode. 4) batch size. 5) n_episodes.
+#  6) tau_critic / tau_actor. 7) learning rates. 8) action noise. 9) n_anneals.
+#  10) more than 1 step inside reward obj. It's endless.
 
-    if reward_scan:
-        kick_max = np.array([env.kick_angle_max] * env.n_dims)
-        rew_1 = env.calculate_reward(env.calculate_state(kick_max))
-        kick_min = np.array([env.kick_angle_min] * env.n_dims)
-        rew_2 = env.calculate_reward(env.calculate_state(kick_min))
-        min_reward = min(rew_1, rew_2) * 0.9
+# TODO: don't need to specifically run an n-D scan, but rather n 1-D scans
+#  should be enough ... focus on n_dims = 4, I) epsilon_init = [0., 0.1, 0.2,
+#  0.4], II) max_steps_per_episode = [25, 50, 75], III) batch_size = [12, 24,
+#  48], IV) tau_critic vs. tau_actor = [0.05, 0.1] x [0.05, 0.1],
+#  V) learning_rates (init) critic vs. actor = [2e-3, 1e-3, 5e-4] x [1e-3,
+#  5e-4, 1e-4], VI) n_anneals (final) = [1, 5, 25, 50].
+#  Maybe run each one 3 times. Evaluation metric: avg./max #steps in
+#  evaluation.
 
-    episode = 0
-    while episode < n_episodes:
-        if reward_scan:
-            target_init_rewards = np.linspace(
-                min_reward, env.reward_threshold, n_episodes)
-            state = env.reset(
-                init_specific_reward_state=target_init_rewards[episode])
-        else:
-            state = env.reset(init_outside_threshold=True)
-
-        rewards = [env.calculate_reward(
-            env.calculate_state(env.kick_angles))]
-
-        n_steps_eps = 0
-        while True:
-            a = agent.get_proposed_action(state, noise_scale=0)
-            state, reward, done, _ = env.step(a)
-            rewards.append(reward)
-            if done or n_steps_eps == (max_steps_per_episode - 1):
-                episode += 1
-                all_rewards.append(rewards)
-                break
-            n_steps_eps += 1
-
-    return np.array(all_rewards)
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!
+# TODO: LEARNING RATES MISSING
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-def plot_training_log(env, agent, data):
-    """ Plot the log data from the training. """
-    # a) Training log
-    fig1, axs = plt.subplots(2, 1, sharex=True)
-    axs[0].plot(data['n_total_steps'], label='Total steps')
-    axs[0].plot(data['n_random_steps'], '--', c='k',
-                label='Random steps')
-    axs[1].plot(data['initial_rewards'], c='r', label='Initial')
-    axs[1].plot(data['final_rewards'], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
-    axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
-    axs[1].set_xlabel('Episodes')
-    axs[0].legend(loc='upper right')
-    axs[1].legend(loc='lower left')
-    plt.tight_layout()
-    plt.show()
+default_params = {
+    'quantum_ddpg': True,
+    'n_episodes': 150,
+    'env': {'n_dims': 4, 'max_steps_per_episode': 50,
+            'required_steps_above_reward_threshold': 1},
+    'trainer': {'batch_size': 24,
+                'n_exploration_steps': 50,
+                'n_episodes_early_stopping': 15},
+    'agent': {'gamma': 0.99, 'tau_critic': 0.1, 'tau_actor': 0.1},
+    'lr_critic': {'init': 5e-4, 'decay_factor': 0.95},
+    'lr_actor': {'init': 1e-4, 'decay_factor': 0.95},
+    'action_noise': {'init': 0.1, 'final': 0.},
+    'epsilon_greedy': {'init': 0.3, 'final': 0.},
+    'anneals': {'n_pieces': 2, 'init': 1, 'final': 50}
+}
 
-    # b) AgentL q before vs after
-    fig2 = plt.figure()
-    plt.plot(np.array(agent.q_log['before']), c='r', label='q before')
-    plt.plot(np.array(agent.q_log['after']), c='g', label='q after')
-    plt.legend()
-    plt.ylabel('Q value')
-    plt.xlabel('Steps')
-    plt.tight_layout()
-    plt.show()
+n_runs_stats = 3
 
-    # c) Agent: q_after minus q_before
-    fig3 = plt.figure()
-    plt.plot(np.array(agent.q_log['after']) - np.array(agent.q_log['before']))
-    plt.ylabel(r'$Q_{{f}} - Q_{{i}}$')
-    plt.xlabel('Steps')
-    plt.tight_layout()
-    plt.show()
+# I) epsilon_init scan
+epsilon_init = [0., 0.1, 0.2, 0.4]
+epsilon_results = {'steps_avg': np.zeros((n_runs_stats, len(epsilon_init))),
+                   'steps_max': np.zeros((n_runs_stats, len(epsilon_init)))}
 
-    # d) Agent: gradients evolution
-    fig4 = plt.figure()
-    plt.plot(agent.actor_grads_log['mean'], label='mean')
-    plt.plot(agent.actor_grads_log['min'], label='min')
-    plt.plot(agent.actor_grads_log['max'], label='max')
-    plt.ylabel('Grads')
-    plt.xlabel('Steps')
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+params = default_params.copy()
+for i, eps in enumerate(epsilon_init):
+    params.update({'epsilon_greedy': {'init': eps, 'final': 0.}})
 
+    for j in range(n_runs_stats):
+        print('==================================')
+        print(f'SCAN I: EPSILON_INIT: {eps}')
+        print(f'Running stats iteration {j+1}/{n_runs_stats}')
+        print('==================================\n')
+        eval_log = run_full(params)
 
-def plot_evaluation_log(env, max_steps_per_episode, data):
-    """ Use rewards returned by evaluator function and create plots. """
-    # a) Evaluation log
-    fig5, axs = plt.subplots(2, 1, sharex=True)
-    axs[0].plot([(len(r) - 1) for r in data])
-    axs[1].plot([r[0] for r in data], c='r', label='Initial')
-    axs[1].plot([r[-1] for r in data], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
-    axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
-    axs[1].set_xlabel('Episodes')
-    axs[1].legend(loc='lower left')
-    plt.tight_layout()
-    plt.show()
+        # count number of steps per episode
+        n_steps = np.array([(len(r) - 1) for r in eval_log])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
 
-    # b) Extract and plot all intermediate rewards
-    all_rewards = np.zeros((len(data), max_steps_per_episode + 1))
-    cmap = plt.get_cmap("magma")
-    fig6, axs = plt.subplots(2, 1, sharex=True)
-    max_steps = 0
-    for i in range(len(data)):
-        all_rewards[i, :len(data[i])] = data[i]
-        if len(data[i]) > max_steps:
-            max_steps = len(data[i])
-    axs[0].plot([(len(r) - 1) for r in data])
-    for j in range(max_steps):
-        axs[1].plot(all_rewards[:, j], c=cmap(j / max_steps), alpha=0.7)
-    axs[1].plot([r[0] for r in data], c='r', label='Initial')
-    axs[1].plot([r[-1] for r in data], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
-    axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
-    axs[1].set_xlabel('Episodes')
-    axs[1].legend(loc='lower left')
-    plt.tight_layout()
-    plt.show()
+        epsilon_results['steps_avg'][j, i] = avg_n_steps
+        epsilon_results['steps_max'][j, i] = max_n_steps
+
+# Show results
+mean_steps_avg = np.mean(epsilon_results['steps_avg'], axis=0)
+std_steps_avg = np.std(epsilon_results['steps_avg'], axis=0)
+mean_steps_max = np.mean(epsilon_results['steps_max'], axis=0)
+std_steps_max = np.std(epsilon_results['steps_max'], axis=0)
+
+plt.figure()
+plt.plot(epsilon_init, mean_steps_avg, marker='x', c='tab:blue', label='Avg.')
+plt.fill_between(epsilon_init, mean_steps_avg - std_steps_avg,
+                 mean_steps_avg + std_steps_avg, color='tab:blue', alpha=0.5)
+plt.plot(epsilon_init, mean_steps_max, marker='x', c='tab:red', label='Max')
+plt.fill_between(epsilon_init, mean_steps_max - std_steps_max,
+                 mean_steps_max + std_steps_max, color='tab:red', alpha=0.5)
+plt.xlabel('Init epsilon greedy')
+plt.ylabel('# steps')
+plt.legend(loc='best')
+plt.savefig('epsilon_scan.png', dpi=150)
+plt.close()
+
+print('FINISHED SCAN I.')
+print('**********************************\n')
 
 
-quantum_ddpg = True
+# II) max_steps_per_episode scan
+max_steps_per_episode = [25, 50, 75]
+max_steps_results = {
+    'steps_avg': np.zeros((n_runs_stats, len(max_steps_per_episode))),
+    'steps_max': np.zeros((n_runs_stats, len(max_steps_per_episode)))}
 
-n_dims = 4
-max_steps_per_episode = 50
-env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
+params = default_params.copy()
+for i, nsteps in enumerate(max_steps_per_episode):
+    params.update(
+        {'env': {'n_dims': 4, 'max_steps_per_episode': nsteps,
+                 'required_steps_above_reward_threshold': 1}})
 
-n_episodes = 200
-batch_size = 32
-n_exploration_steps = 50
-n_episodes_early_stopping = 30
+    for j in range(n_runs_stats):
+        print('==================================')
+        print(f'SCAN II: MAX_STEPS: {nsteps}')
+        print(f'Running stats iteration {j+1}/{n_runs_stats}')
+        print('==================================\n')
+        eval_log = run_full(params)
 
-gamma = 0.999
-tau_critic = 0.05  # 0.1
-tau_actor = 0.05  # 0.1
+        # count number of steps per episode
+        n_steps = np.array([(len(r) - 1) for r in eval_log])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
 
-# Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
-lr_schedule_critic = ExponentialDecay(1e-3, n_episodes, 0.95)
-lr_schedule_actor = ExponentialDecay(5e-4, n_episodes, 0.95)
+        max_steps_results['steps_avg'][j, i] = avg_n_steps
+        max_steps_results['steps_max'][j, i] = max_n_steps
 
-if quantum_ddpg:
-    agent = QuantumDDPG(state_space=env.observation_space,
-                        action_space=env.action_space, gamma=gamma,
-                        tau_critic=tau_critic, tau_actor=tau_actor,
-                        learning_rate_schedule_critic=lr_schedule_critic,
-                        learning_rate_schedule_actor=lr_schedule_actor,
-                        grad_clip_actor=1e4, grad_clip_critic=1.)
-else:
-    agent = ClassicalDDPG(state_space=env.observation_space,
-                          action_space=env.action_space, gamma=gamma,
-                          tau_critic=tau_critic, tau_actor=tau_actor,
-                          learning_rate_schedule_critic=lr_schedule_critic,
-                          learning_rate_schedule_actor=lr_schedule_actor)
+# Show results
+mean_steps_avg = np.mean(max_steps_results['steps_avg'], axis=0)
+std_steps_avg = np.std(max_steps_results['steps_avg'], axis=0)
+mean_steps_max = np.mean(max_steps_results['steps_max'], axis=0)
+std_steps_max = np.std(max_steps_results['steps_max'], axis=0)
 
-action_noise_schedule = PolynomialDecay(0.1, n_episodes, 0.01)
-epsilon_greedy_schedule = PolynomialDecay(0.3, n_episodes, 0.0)
-n_anneals_schedule = PiecewiseConstantDecay(
-    [0.5 * n_episodes, 0.7 * n_episodes],
-    [1, 5, 50])
+plt.figure()
+plt.plot(max_steps_per_episode, mean_steps_avg, marker='x', c='tab:blue',
+         label='Avg.')
+plt.fill_between(max_steps_per_episode, mean_steps_avg - std_steps_avg,
+                 mean_steps_avg + std_steps_avg, color='tab:blue', alpha=0.5)
+plt.plot(max_steps_per_episode, mean_steps_max, marker='x', c='tab:red',
+         label='Max')
+plt.fill_between(max_steps_per_episode, mean_steps_max - std_steps_max,
+                 mean_steps_max + std_steps_max, color='tab:red', alpha=0.5)
+plt.xlabel('Max steps per episode')
+plt.ylabel('# steps')
+plt.legend(loc='best')
+plt.savefig('max_steps_per_episode_scan.png', dpi=150)
+plt.close()
 
-# AGENT TRAINING
-episode_log = trainer(env=env, agent=agent, max_episodes=n_episodes,
-                      max_steps_per_episode=max_steps_per_episode,
-                      batch_size=batch_size,
-                      action_noise_schedule=action_noise_schedule,
-                      epsilon_greedy_schedule=epsilon_greedy_schedule,
-                      n_anneals_schedule=n_anneals_schedule,
-                      n_exploration_steps=n_exploration_steps,
-                      n_episodes_early_stopping=n_episodes_early_stopping)
-plot_training_log(env, agent, episode_log)
+print('FINISHED SCAN II.')
+print('**********************************\n')
 
-# AGENT EVALUATION
-# a) Random state inits
-env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
-episode_log = evaluator(env, agent, n_episodes=100, reward_scan=False)
-plot_evaluation_log(env, max_steps_per_episode, episode_log)
 
-# b) Systematic state inits
-env = RmsSteeringEnv(n_dims=n_dims, max_steps_per_episode=max_steps_per_episode)
-episode_log = evaluator(env, agent, n_episodes=100, reward_scan=True)
-plot_evaluation_log(env, max_steps_per_episode, episode_log)
+# III) batch_size scan
+batch_size = [12, 24, 48]
+batch_size_results = {
+    'steps_avg': np.zeros((n_runs_stats, len(max_steps_per_episode))),
+    'steps_max': np.zeros((n_runs_stats, len(max_steps_per_episode)))}
+
+params = default_params.copy()
+for i, bs in enumerate(batch_size):
+    params.update(
+        {'trainer': {'batch_size': bs,
+                     'n_exploration_steps': 10,
+                     'n_episodes_early_stopping': 15}})
+
+    for j in range(n_runs_stats):
+        print('==================================')
+        print(f'SCAN III: BATCH_SIZE: {bs}')
+        print(f'Running stats iteration {j+1}/{n_runs_stats}')
+        print('==================================\n')
+        eval_log = run_full(params)
+
+        # count number of steps per episode
+        n_steps = np.array([(len(r) - 1) for r in eval_log])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
+
+        batch_size_results['steps_avg'][j, i] = avg_n_steps
+        batch_size_results['steps_max'][j, i] = max_n_steps
+
+# Show results
+mean_steps_avg = np.mean(batch_size_results['steps_avg'], axis=0)
+std_steps_avg = np.std(batch_size_results['steps_avg'], axis=0)
+mean_steps_max = np.mean(batch_size_results['steps_max'], axis=0)
+std_steps_max = np.std(batch_size_results['steps_max'], axis=0)
+
+plt.figure()
+plt.plot(batch_size, mean_steps_avg, marker='x', c='tab:blue',
+         label='Avg.')
+plt.fill_between(batch_size, mean_steps_avg - std_steps_avg,
+                 mean_steps_avg + std_steps_avg, color='tab:blue', alpha=0.5)
+plt.plot(batch_size, mean_steps_max, marker='x', c='tab:red',
+         label='Max')
+plt.fill_between(batch_size, mean_steps_max - std_steps_max,
+                 mean_steps_max + std_steps_max, color='tab:red', alpha=0.5)
+plt.xlabel('Batch size')
+plt.ylabel('# steps')
+plt.legend(loc='best')
+plt.savefig('batch_size_scan.png', dpi=150)
+plt.close()
+
+print('FINISHED SCAN III.')
+print('**********************************\n')
+
+
+# VI) n_anneals scan
+n_anneals = [1, 5, 25, 50]
+n_anneals_results = {
+    'steps_avg': np.zeros((n_runs_stats, len(max_steps_per_episode))),
+    'steps_max': np.zeros((n_runs_stats, len(max_steps_per_episode)))}
+
+params = default_params.copy()
+for i, n_ann in enumerate(n_anneals):
+    params.update(
+        {'anneals': {'n_pieces': 2, 'init': 1, 'final': n_ann}})
+
+    for j in range(n_runs_stats):
+        print('==================================')
+        print(f'SCAN VI: N_ANNEALS: {n_ann}')
+        print(f'Running stats iteration {j+1}/{n_runs_stats}')
+        print('==================================\n')
+        eval_log = run_full(params)
+
+        # count number of steps per episode
+        n_steps = np.array([(len(r) - 1) for r in eval_log])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
+
+        n_anneals_results['steps_avg'][j, i] = avg_n_steps
+        n_anneals_results['steps_max'][j, i] = max_n_steps
+
+# Show results
+mean_steps_avg = np.mean(n_anneals_results['steps_avg'], axis=0)
+std_steps_avg = np.std(n_anneals_results['steps_avg'], axis=0)
+mean_steps_max = np.mean(n_anneals_results['steps_max'], axis=0)
+std_steps_max = np.std(n_anneals_results['steps_max'], axis=0)
+
+plt.figure()
+plt.plot(n_anneals, mean_steps_avg, marker='x', c='tab:blue',
+         label='Avg.')
+plt.fill_between(n_anneals, mean_steps_avg - std_steps_avg,
+                 mean_steps_avg + std_steps_avg, color='tab:blue', alpha=0.5)
+plt.plot(n_anneals, mean_steps_max, marker='x', c='tab:red',
+         label='Max')
+plt.fill_between(n_anneals, mean_steps_max - std_steps_max,
+                 mean_steps_max + std_steps_max, color='tab:red', alpha=0.5)
+plt.xlabel('# anneals final')
+plt.ylabel('# steps')
+plt.legend(loc='best')
+plt.savefig('n_anneals_scan.png', dpi=150)
+plt.close()
+
+print('FINISHED SCAN VI.')
+print('**********************************\n')
+
+
+# IV) tau_critic x tau_actor scan
+tau_critic = [0.05, 0.1]
+tau_actor = [0.05, 0.1]
+tau_results = {
+    'steps_avg': np.zeros((n_runs_stats, len(tau_critic), len(tau_actor))),
+    'steps_max': np.zeros((n_runs_stats, len(tau_critic), len(tau_actor)))}
+
+params = default_params.copy()
+for i, tc in enumerate(tau_critic):
+    for ii, ta in enumerate(tau_actor):
+        params.update(
+            {'agent': {'gamma': 0.99, 'tau_critic': tc, 'tau_actor': ta}})
+
+        for j in range(n_runs_stats):
+            print('==================================')
+            print(f'SCAN IV: TAU_CRITIC: {tc}, TAU_ACTOR: {ta}')
+            print(f'Running stats iteration {j+1}/{n_runs_stats}')
+            print('==================================\n')
+            eval_log = run_full(params)
+
+            # count number of steps per episode
+            n_steps = np.array([(len(r) - 1) for r in eval_log])
+            max_n_steps = np.max(n_steps)
+            avg_n_steps = np.mean(n_steps)
+
+            tau_results['steps_avg'][j, i, ii] = avg_n_steps
+            tau_results['steps_max'][j, i, ii] = max_n_steps
+
+# Show results
+mean_steps_avg = np.mean(tau_results['steps_avg'], axis=0)
+std_steps_avg = np.std(tau_results['steps_avg'], axis=0)
+mean_steps_max = np.mean(tau_results['steps_max'], axis=0)
+std_steps_max = np.std(tau_results['steps_max'], axis=0)
+
+plt.figure()
+pc = plt.pcolormesh(tau_critic, tau_actor, tau_results['steps_avg'],
+                    shading='auto',
+                    cmap=plt.get_cmap('plasma'),
+                    vmin=np.min(tau_results['steps_avg']),
+                    vmax=np.max(tau_results['steps_avg']))
+plt.colorbar(pc)
+plt.xlabel('tau_critic')
+plt.ylabel('tau_actor')
+plt.savefig('tau_avg_steps.png', dpi=150)
+plt.close()
+
+plt.figure()
+pc = plt.pcolormesh(tau_critic, tau_actor, tau_results['steps_max'],
+                    shading='auto',
+                    cmap=plt.get_cmap('plasma'),
+                    vmin=np.min(tau_results['steps_max']),
+                    vmax=np.max(tau_results['steps_max']))
+plt.colorbar(pc)
+plt.xlabel('tau_critic')
+plt.ylabel('tau_actor')
+plt.savefig('tau_max_steps.png', dpi=150)
+
+print('FINISHED SCAN IV.')
+print('**********************************\n')
