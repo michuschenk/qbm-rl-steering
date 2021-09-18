@@ -2,6 +2,7 @@
 # https://deeplearningcourses.com/c/cutting-edge-artificial-intelligence
 import numpy as np
 import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 from qbm_rl_steering.core.utils import (generate_classical_critic,
                                         generate_classical_actor)
@@ -240,7 +241,7 @@ class QuantumDDPG:
             small_gamma=self.gamma,
             n_replicas=1,
             big_gamma=(20., 0.), beta=2,
-            n_annealing_steps=100,
+            n_annealing_steps=200,
             n_meas_for_average=1,
             kwargs_qpu={})
 
@@ -304,6 +305,7 @@ class QuantumDDPG:
         # Invert order since _update_critic will directly apply gradient update
         # while _get_gradients_actor does not.
         # This is to ensure simultaneous update of actor and critic
+        # TODO: Is this what we want really?
         grads_actor = self._get_gradients_actor(s, batch_size)
         self._update_critic(s, a, r, s2, episode_count)
         self.actor_optimizer.apply_gradients(
