@@ -70,14 +70,17 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 class RmsSteeringEnv(gym.Env):
     def __init__(self, n_dims: int = 2, max_steps_per_episode: int = 20,
-                 reward_scale: float = 1e6, kick_angle_max: float = 300e-6) -> \
-            None:
+                 reward_scale: float = 1e6, kick_angle_max: float = 300e-6,
+                 required_steps_above_reward_threshold: int = 4) -> None:
         """
         :param n_dims: choose how many dimensions (#kickers and #bpms to use)
         :param max_steps_per_episode: max number of steps we allow agent to
         'explore' per episode. After this number of steps, episode is aborted.
         :param reward_scale: scalar to scale up reward
         :param kick_angle_max: maximum kick angle per corrector (m rad)
+        :param required_steps_above_reward_threshold: number of steps we want
+        agent to stay above reward objective before ending episode. Can be > 1
+        during training, but typically == 1 during evaluation.
         """
         super(RmsSteeringEnv, self).__init__()
 
@@ -100,11 +103,12 @@ class RmsSteeringEnv(gym.Env):
         self.kick_angles = [None] * self.n_dims  # will be init. at self.reset()
         self.kick_angle_max = kick_angle_max  # (rad)
         self.kick_angle_min = -self.kick_angle_max  # (rad)
-        self.kick_angle_margin = 0.1*self.kick_angle_max  # (rad)
+
+        # TODO: get rid of margin. Not really used anymore
+        # self.kick_angle_margin = 0.1 * self.kick_angle_max  # (rad)
 
         # Use same action_scale for all dipoles
-        self.action_scale = (2. / (self.kick_angle_max - self.kick_angle_min +
-                                   2 * self.kick_angle_margin))
+        self.action_scale = 2. / (self.kick_angle_max - self.kick_angle_min)
 
         # BEAM POSITION
         # x0: position at origin, i.e. before entering first kicker
@@ -113,10 +117,10 @@ class RmsSteeringEnv(gym.Env):
         # observation_space given kick_angle_min, kick_angle_max
         self.x0 = 0.
         self.state = [None] * self.n_dims  # will be init. with self.reset()
-        max_angle = self.kick_angle_max + self.kick_angle_margin
+        max_angle = self.kick_angle_max  # + self.kick_angle_margin
         x_max_margin = self.calculate_state([max_angle] * self.n_dims)
 
-        min_angle = self.kick_angle_min - self.kick_angle_margin
+        min_angle = self.kick_angle_min  # - self.kick_angle_margin
         x_min_margin = self.calculate_state([min_angle] * self.n_dims)
 
         self.state_scale = 2. / (np.max(x_max_margin) - np.min(x_min_margin))
@@ -139,11 +143,12 @@ class RmsSteeringEnv(gym.Env):
         # Reward threshold is adjusted such that we require 0.0016 m at 10-D,
         # as in the original AWAKE environment. In n-D the reward_threshold is
         # scaled linearly with n. Hence at 1-D, threshold will be  0.00016 m.
-        # Parameter cancel_on_reward is there to abort episode when agent
-        # goes completely out.
-        # TODO: factor 20 quite arbitrary
         self.reward_threshold = -self.reward_scale * self.n_dims * 1.6e-4
-        self.cancel_on_reward = self.reward_threshold * 20
+        self.required_steps_above_reward_threshold = \
+            required_steps_above_reward_threshold
+        self.steps_above_reward_threshold = None
+        self.max_steps_above_reward_threshold = None
+        # self.cancel_on_reward = self.reward_threshold * 20
 
         # Logging
         self.interaction_logger = Logger()
@@ -173,24 +178,53 @@ class RmsSteeringEnv(gym.Env):
 
         # Is episode done?
         # Can be either because 1) reached max number of steps per episode,
-        # 2) reached reward target, or 3) out of bounds...
+        # 2) reached reward target and stayed inside for a while,
+        # or 3) kick angles went out of bounds...
         # Note that reward is calculated using the non-normalized state,
         # i.e. units of (m).
         reward = self.calculate_reward(new_state)
+
+        # Keep stats for how many consecutive steps agent has stayed within
+        # reward objective at any point during episode
+        if reward > self.reward_threshold:
+            self.steps_above_reward_threshold += 1
+        else:
+            self.steps_above_reward_threshold = 0
+
+        self.max_steps_above_reward_threshold = max(
+            self.steps_above_reward_threshold,
+            self.max_steps_above_reward_threshold)
+
+        # Is episode over?
         done = bool(
-            self.step_count > self.max_steps_per_episode
-            or reward > self.reward_threshold
-            or reward < self.cancel_on_reward
+            self.step_count >= self.max_steps_per_episode
+            or (self.steps_above_reward_threshold >=
+                self.required_steps_above_reward_threshold)
+            # or any([angle < 10. * (self.kick_angle_min - self.kick_angle_margin)
+            #         for angle in self.kick_angles])
+            # or any([angle > 10. * (self.kick_angle_max + self.kick_angle_margin)
+            #         for angle in self.kick_angles])
+            # or reward < self.cancel_on_reward
         )
 
-        # Keep track of reason for episode abort
-        # TODO: not implemented here...
-        done_reason = -1
+        # Why did episode end?
+        done_reason = 'NA'
+        if self.step_count >= self.max_steps_per_episode:
+            done_reason = 'MaxSteps'
+        elif (self.steps_above_reward_threshold >=
+              self.required_steps_above_reward_threshold):
+            done_reason = 'RewardObjective'
+        # elif (any([angle < 10. * (self.kick_angle_min - self.kick_angle_margin)
+        #            for angle in self.kick_angles]) or
+        #       any([angle > 10. * (self.kick_angle_max + self.kick_angle_margin)
+        #            for angle in self.kick_angles])):
+        #     done_reason = 'OutOfBounds'
 
         # Interaction log
         self.interaction_logger.log_episode.append(
             [state, action / self.action_scale, reward, new_state, done,
              done_reason])
+
         if done:
             self.interaction_logger.log_all.append(
                 self.interaction_logger.log_episode)
@@ -211,7 +245,7 @@ class RmsSteeringEnv(gym.Env):
         self.kick_angles = [None] * self.n_dims
         temp_angles = None
         temp_reward = 0
-        while temp_reward > 1.2*self.reward_threshold:
+        while temp_reward > 1.2 * self.reward_threshold:
             temp_angles = np.random.uniform(
                 low=self.kick_angle_min, high=self.kick_angle_max,
                 size=self.n_dims)
@@ -257,8 +291,10 @@ class RmsSteeringEnv(gym.Env):
         x_init = self.calculate_state(self.kick_angles)
         self.state = x_init * self.state_scale
 
-        # Logging
+        # Logging and counters
         self.step_count = 0
+        self.steps_above_reward_threshold = 0
+        self.max_steps_above_reward_threshold = 0
         self.interaction_logger.episode_reset()
 
         # Note that reward is calculated using the non-normalized state,
@@ -279,7 +315,7 @@ class RmsSteeringEnv(gym.Env):
         :param state: non-normalized positions at BPMs (units (m)).
         :return corresponding scaled reward (scaled negative rms).
         """
-        return -self.reward_scale * np.sqrt(np.mean(np.array(state)**2))
+        return -self.reward_scale * np.sqrt(np.mean(np.array(state) ** 2))
 
     def calculate_state(self, kick_angles) -> np.ndarray:
         """ Transports beam through the transfer line and calculates the
@@ -292,7 +328,7 @@ class RmsSteeringEnv(gym.Env):
             bpm_x, bpm_px = transport(self.kickers[i], self.bpms[i],
                                       xi, pxi + kick_angles[i])
             state.append(bpm_x)
-            xi, pxi = transport(self.bpms[i], self.kickers[i+1],
+            xi, pxi = transport(self.bpms[i], self.kickers[i + 1],
                                 bpm_x, bpm_px)
 
         # Transport from last kicker to last BPM
