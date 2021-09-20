@@ -167,6 +167,7 @@ eval_log = run_full(default_params)
 """
 n_runs_stats = 3
 
+"""
 # I) epsilon_init scan
 epsilon_init = [0., 0.1, 0.2, 0.4]
 epsilon_results = {'steps_avg': np.zeros((n_runs_stats, len(epsilon_init))),
@@ -212,8 +213,9 @@ plt.close()
 
 print('FINISHED SCAN I.')
 print('**********************************\n')
+"""
 
-
+"""
 # II) max_steps_per_episode scan
 max_steps_per_episode = [25, 50, 75]
 max_steps_results = {
@@ -264,13 +266,13 @@ plt.close()
 
 print('FINISHED SCAN II.')
 print('**********************************\n')
-
+"""
 
 # III) batch_size scan
 batch_size = [12, 24, 48]
 batch_size_results = {
-    'steps_avg': np.zeros((n_runs_stats, len(max_steps_per_episode))),
-    'steps_max': np.zeros((n_runs_stats, len(max_steps_per_episode)))}
+    'steps_avg': np.zeros((n_runs_stats, len(batch_size))),
+    'steps_max': np.zeros((n_runs_stats, len(batch_size)))}
 
 params = default_params.copy()
 for i, bs in enumerate(batch_size):
@@ -322,8 +324,8 @@ print('**********************************\n')
 # VI) n_anneals scan
 n_anneals = [1, 5, 25, 50]
 n_anneals_results = {
-    'steps_avg': np.zeros((n_runs_stats, len(max_steps_per_episode))),
-    'steps_max': np.zeros((n_runs_stats, len(max_steps_per_episode)))}
+    'steps_avg': np.zeros((n_runs_stats, len(n_anneals))),
+    'steps_max': np.zeros((n_runs_stats, len(n_anneals)))}
 
 params = default_params.copy()
 for i, n_ann in enumerate(n_anneals):
