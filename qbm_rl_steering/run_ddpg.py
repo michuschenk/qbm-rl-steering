@@ -161,6 +161,10 @@ default_params = {
     'anneals': {'n_pieces': 2, 'init': 1, 'final': 50}
 }
 
+eval_log = run_full(default_params)
+
+
+"""
 n_runs_stats = 3
 
 # I) epsilon_init scan
@@ -425,3 +429,4 @@ plt.savefig('tau_max_steps.png', dpi=150)
 
 print('FINISHED SCAN IV.')
 print('**********************************\n')
+"""
