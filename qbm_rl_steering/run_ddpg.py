@@ -167,7 +167,6 @@ eval_log = run_full(default_params)
 """
 n_runs_stats = 3
 
-"""
 # I) epsilon_init scan
 epsilon_init = [0., 0.1, 0.2, 0.4]
 epsilon_results = {'steps_avg': np.zeros((n_runs_stats, len(epsilon_init))),
@@ -213,9 +212,8 @@ plt.close()
 
 print('FINISHED SCAN I.')
 print('**********************************\n')
-"""
 
-"""
+
 # II) max_steps_per_episode scan
 max_steps_per_episode = [25, 50, 75]
 max_steps_results = {
@@ -266,7 +264,7 @@ plt.close()
 
 print('FINISHED SCAN II.')
 print('**********************************\n')
-"""
+
 
 # III) batch_size scan
 batch_size = [12, 24, 48]
