@@ -31,6 +31,9 @@ kicker_betx = [5.016723858, 5.886266934, 6.052163992, 6.046419848, 9.314903776,
 kicker_mux = [0.009194325, 0.039760035, 0.066868057, 0.114287972, 0.133215709,
               0.151712285, 0.645405637, 0.646912395, 0.647892223, 0.651121445]
 
+state_scale_correction = np.array([1.05, 1.04, 1.01, 1.00, 0.94, 1.15, 2.55,
+                                   2.58, 2.53, 2.58])
+
 
 class TwissElement:
     def __init__(self, beta: float, alpha: float, mu: float) -> None:
@@ -124,6 +127,7 @@ class RmsSteeringEnv(gym.Env):
         x_min_margin = self.calculate_state([min_angle] * self.n_dims)
 
         self.state_scale = 2. / (np.max(x_max_margin) - np.min(x_min_margin))
+        self.state_scale /= state_scale_correction[n_dims - 1]
 
         # GYM REQUIREMENTS
         # Define continuous action space
