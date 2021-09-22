@@ -3,9 +3,12 @@ import os
 import shutil
 import pickle
 
+import multiprocessing as mp
+from functools import partial
+from typing import Dict
+
 import pandas as pd
 import numpy as np
-from matplotlib import pyplot as plt
 
 from tensorflow.keras.optimizers.schedules import (ExponentialDecay,
                                                    PolynomialDecay,
@@ -18,7 +21,7 @@ from qbm_rl_steering.core.run_utils import (trainer, evaluator,
                                             plot_evaluation_log)
 
 
-def run_full(params):
+def run_full(params, worker_id=None):
     env = RmsSteeringEnv(**params['env'])
 
     # Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
@@ -64,6 +67,8 @@ def run_full(params):
     # PREPARE OUTPUT FOLDER
     date_time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     out_path = './runs/' + date_time_now
+    if worker_id is not None:
+        out_path = out_path + '_worker{worker_id}'
     os.makedirs(out_path)
     shutil.copy('./run_ddpg.py', out_path + '/run_ddpg.py')
     shutil.copy('./core/ddpg_agents.py', out_path + '/ddpg_agents.py')
@@ -85,45 +90,44 @@ def run_full(params):
     # AGENT EVALUATION
     # a) Random state inits
     env = RmsSteeringEnv(**params['env'])
-    episode_log = evaluator(env, agent, n_episodes=100, reward_scan=False)
+    eval_log_random = evaluator(env, agent, n_episodes=100, reward_scan=False)
     try:
-        df_eval_log = pd.DataFrame({'rewards': episode_log})
+        df_eval_log = pd.DataFrame({'rewards': eval_log_random})
     except ValueError:
         print('Issue creating eval df ... probably all evaluations '
-              'used '
-              'same number of steps')
-        n_stp = episode_log.shape[1]
+              'used same number of steps')
+
+        n_stp = eval_log_random.shape[1]
         res_dict = {}
         for st in range(n_stp):
-            res_dict[f'step_{st}'] = episode_log[:, st]
+            res_dict[f'step_{st}'] = eval_log_random[:, st]
         df_eval_log = pd.DataFrame(res_dict)
 
     df_eval_log.to_csv(out_path + '/eval_log_random')
     plot_evaluation_log(env, params['env']['max_steps_per_episode'],
-                        episode_log,
-                        save_path=out_path, type='random')
+                        eval_log_random, save_path=out_path, type='random')
 
     # b) Systematic state inits
     env = RmsSteeringEnv(**params['env'])
-    episode_log = evaluator(env, agent, n_episodes=100, reward_scan=True)
+    eval_log_scan = evaluator(env, agent, n_episodes=100, reward_scan=True)
     try:
-        df_eval_log = pd.DataFrame({'rewards': episode_log})
+        df_eval_log = pd.DataFrame({'rewards': eval_log_scan})
     except ValueError:
         print('Issue creating eval df ... probably all evaluations used '
               'same number of steps')
-        n_stp = episode_log.shape[1]
+
+        n_stp = eval_log_scan.shape[1]
         res_dict = {}
         for st in range(n_stp):
-            res_dict[f'step_{st}'] = episode_log[:, st]
+            res_dict[f'step_{st}'] = eval_log_scan[:, st]
         df_eval_log = pd.DataFrame(res_dict)
 
     df_eval_log.to_csv(out_path + '/eval_log_scan')
     plot_evaluation_log(env, params['env']['max_steps_per_episode'],
-                        episode_log,
-                        save_path=out_path, type='scan')
+                        eval_log_scan, save_path=out_path, type='scan')
 
     # TODO: clean up... for now return the results from the scan evaluation
-    return episode_log
+    return eval_log_random, eval_log_scan
 
 
 # TODO: parameters to consider: 1) epsilon (init and final). 2) gradient
@@ -144,24 +148,82 @@ def run_full(params):
 # TODO: LEARNING RATES MISSING
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+def run_worker(default_params: Dict, scan_param_value: [float, int],
+               scan_param_name: str, scan_param_name_sub: str = None):
 
-default_params = {
-    'quantum_ddpg': True,
-    'n_episodes': 150,
-    'env': {'n_dims': 4, 'max_steps_per_episode': 50,
-            'required_steps_above_reward_threshold': 1},
-    'trainer': {'batch_size': 24,
-                'n_exploration_steps': 50,
-                'n_episodes_early_stopping': 15},
-    'agent': {'gamma': 0.99, 'tau_critic': 0.1, 'tau_actor': 0.1},
-    'lr_critic': {'init': 5e-4, 'decay_factor': 0.95},
-    'lr_actor': {'init': 1e-4, 'decay_factor': 0.95},
-    'action_noise': {'init': 0.1, 'final': 0.},
-    'epsilon_greedy': {'init': 0.3, 'final': 0.},
-    'anneals': {'n_pieces': 2, 'init': 1, 'final': 50}
-}
+    n_stats = 10
 
-eval_log = run_full(default_params)
+    # Copy default parameters and overwrite the corresponding scan parameter
+    params = default_params.copy()
+    if scan_param_name_sub is None:
+        params.update({scan_param_name: scan_param_value})
+    else:
+        params.update({
+            scan_param_name: {scan_param_name_sub: scan_param_value}})
+
+    results_worker = {
+        scan_param_value: {'random': {'steps_avg': np.zeros(n_stats),
+                                      'steps_max': np.zeros(n_stats)},
+                           'scan': {'steps_avg': np.zeros(n_stats),
+                                    'steps_max': np.zeros(n_stats)}}
+    }
+
+    worker_id = mp.current_process().name.split('-')[-1]
+    for i in range(n_stats):
+        eval_log_random, eval_log_scan = run_full(params, worker_id)
+
+        # Count number of steps per episode (RANDOM evaluation)
+        n_steps = np.array([(len(rew) - 1) for rew in eval_log_random])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
+        results_worker[scan_param_value]['random']['steps_avg'][i] = avg_n_steps
+        results_worker[scan_param_value]['random']['steps_max'][i] = max_n_steps
+
+        # Count number of steps per episode (SCAN evaluation)
+        n_steps = np.array([(len(rew) - 1) for rew in eval_log_scan])
+        max_n_steps = np.max(n_steps)
+        avg_n_steps = np.mean(n_steps)
+        results_worker[scan_param_value]['scan']['steps_avg'][i] = avg_n_steps
+        results_worker[scan_param_value]['scan']['steps_max'][i] = max_n_steps
+
+    with open(f'bkp_res_{scan_param_name}_{scan_param_value}.pkl', 'wb') as fid:
+        pickle.dump(results_worker, fid)
+
+    return results_worker
+
+
+if __name__ == '__main__':
+    default_params = {
+        'quantum_ddpg': True,
+        'n_episodes': 200,
+        'env': {'n_dims': 6, 'max_steps_per_episode': 50,
+                'required_steps_above_reward_threshold': 1},
+        'trainer': {'batch_size': 32,
+                    'n_exploration_steps': 50,
+                    'n_episodes_early_stopping': 15},
+        'agent': {'gamma': 0.99, 'tau_critic': 0.1, 'tau_actor': 0.1},
+        'lr_critic': {'init': 5e-4, 'decay_factor': 0.95},
+        'lr_actor': {'init': 1e-4, 'decay_factor': 0.95},
+        'action_noise': {'init': 0.1, 'final': 0.},
+        'epsilon_greedy': {'init': 0.3, 'final': 0.},
+        'anneals': {'n_pieces': 2, 'init': 1, 'final': 50}
+    }
+
+    scan_param_values = [0.1, 0.2, 0.3, 0.4]
+    scan_param_name = 'epsilon_greedy'
+    scan_param_name_sub = 'init'
+
+    results_all = {}
+    with mp.Pool(max(len(scan_param_values), 8)) as p:
+        res = p.map(partial(run_worker, default_params=default_params,
+                            scan_param_name=scan_param_name,
+                            scan_param_name_sub=scan_param_name_sub),
+                    scan_param_values)
+        for r in res:
+            results_all.update(r)
+
+    with open(f'scan_res_all_{scan_param_name}.pkl', 'wb') as fid:
+        pickle.dump(results_all, fid)
 
 
 """
