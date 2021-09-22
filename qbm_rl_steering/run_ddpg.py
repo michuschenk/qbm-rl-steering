@@ -3,9 +3,11 @@ import os
 import shutil
 import pickle
 
-import multiprocessing as mp
-from functools import partial
-from typing import Dict
+# from pathos.multiprocessing import ProcessingPool as Pool
+# import multiprocessing as mp
+# import time
+# from functools import partial
+# from typing import Dict
 
 import pandas as pd
 import numpy as np
@@ -21,16 +23,20 @@ from qbm_rl_steering.core.run_utils import (trainer, evaluator,
                                             plot_evaluation_log)
 
 
-def run_full(params, worker_id=None):
-    env = RmsSteeringEnv(**params['env'])
+def run_full(params, worker_identifier=None):
+    env = RmsSteeringEnv(
+        n_dims=params['env/n_dims'],
+        max_steps_per_episode=params['env/max_steps_per_episode'],
+        required_steps_above_reward_threshold=
+        params['env/required_steps_above_reward_threshold'])
 
     # Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
-    lr_schedule_critic = ExponentialDecay(params['lr_critic']['init'],
+    lr_schedule_critic = ExponentialDecay(params['lr_critic/init'],
                                           params['n_episodes'],
-                                          params['lr_critic']['decay_factor'])
-    lr_schedule_actor = ExponentialDecay(params['lr_actor']['init'],
+                                          params['lr_critic/decay_factor'])
+    lr_schedule_actor = ExponentialDecay(params['lr_actor/init'],
                                          params['n_episodes'],
-                                         params['lr_actor']['decay_factor'])
+                                         params['lr_actor/decay_factor'])
 
     if params['quantum_ddpg']:
         agent = QuantumDDPG(state_space=env.observation_space,
@@ -38,36 +44,42 @@ def run_full(params, worker_id=None):
                             learning_rate_schedule_critic=lr_schedule_critic,
                             learning_rate_schedule_actor=lr_schedule_actor,
                             grad_clip_actor=1e4, grad_clip_critic=1.,
-                            **params['agent'])
+                            gamma=params['agent/gamma'],
+                            tau_critic=params['agent/tau_critic'],
+                            tau_actor=params['agent/tau_actor']
+                            )
     else:
         agent = ClassicalDDPG(state_space=env.observation_space,
                               action_space=env.action_space,
                               learning_rate_schedule_critic=lr_schedule_critic,
                               learning_rate_schedule_actor=lr_schedule_actor,
-                              **params['agent'])
+                              gamma=params['agent/gamma'],
+                              tau_critic=params['agent/tau_critic'],
+                              tau_actor=params['agent/tau_actor']
+                              )
 
     # Action noise schedule
     action_noise_schedule = PolynomialDecay(
-        params['action_noise']['init'], params['n_episodes'],
-        params['action_noise']['final'])
+        params['action_noise/init'], params['n_episodes'],
+        params['action_noise/final'])
 
     # Epsilon greedy schedule
     epsilon_greedy_schedule = PolynomialDecay(
-        params['epsilon_greedy']['init'], params['n_episodes'],
-        params['epsilon_greedy']['final'])
+        params['epsilon_greedy/init'], params['n_episodes'],
+        params['epsilon_greedy/final'])
 
     # Schedule n_anneals
     t_transition = [int(x * params['n_episodes']) for x in
-                    np.linspace(0, 1., params['anneals']['n_pieces'] + 1)][1:-1]
-    y_transition = [int(n) for n in np.linspace(params['anneals']['init'],
-                                                params['anneals']['final'],
-                                                params['anneals']['n_pieces'])]
+                    np.linspace(0, 1., params['anneals/n_pieces'] + 1)][1:-1]
+    y_transition = [int(n) for n in np.linspace(params['anneals/init'],
+                                                params['anneals/final'],
+                                                params['anneals/n_pieces'])]
     n_anneals_schedule = PiecewiseConstantDecay(t_transition, y_transition)
 
     # PREPARE OUTPUT FOLDER
     date_time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     out_path = './runs/' + date_time_now
-    if worker_id is not None:
+    if worker_identifier is not None:
         out_path = out_path + '_worker{worker_id}'
     os.makedirs(out_path)
     shutil.copy('./run_ddpg.py', out_path + '/run_ddpg.py')
@@ -81,15 +93,22 @@ def run_full(params, worker_id=None):
         env=env, agent=agent, action_noise_schedule=action_noise_schedule,
         epsilon_greedy_schedule=epsilon_greedy_schedule,
         n_anneals_schedule=n_anneals_schedule, n_episodes=params['n_episodes'],
-        max_steps_per_episode=params['env']['max_steps_per_episode'],
-        **params['trainer'])
+        max_steps_per_episode=params['env/max_steps_per_episode'],
+        batch_size=params['trainer/batch_size'],
+        n_exploration_steps=params['trainer/n_exploration_steps'],
+        n_episodes_early_stopping=params['trainer/n_episodes_early_stopping']
+    )
     plot_training_log(env, agent, episode_log, save_path=out_path)
     df_train_log = pd.DataFrame(episode_log)
     df_train_log.to_csv(out_path + '/train_log')
 
     # AGENT EVALUATION
     # a) Random state inits
-    env = RmsSteeringEnv(**params['env'])
+    env = RmsSteeringEnv(
+        n_dims=params['env/n_dims'],
+        max_steps_per_episode=params['env/max_steps_per_episode'],
+        required_steps_above_reward_threshold=
+        params['env/required_steps_above_reward_threshold'])
     eval_log_random = evaluator(env, agent, n_episodes=100, reward_scan=False)
     try:
         df_eval_log = pd.DataFrame({'rewards': eval_log_random})
@@ -104,11 +123,15 @@ def run_full(params, worker_id=None):
         df_eval_log = pd.DataFrame(res_dict)
 
     df_eval_log.to_csv(out_path + '/eval_log_random')
-    plot_evaluation_log(env, params['env']['max_steps_per_episode'],
+    plot_evaluation_log(env, params['env/max_steps_per_episode'],
                         eval_log_random, save_path=out_path, type='random')
 
     # b) Systematic state inits
-    env = RmsSteeringEnv(**params['env'])
+    env = RmsSteeringEnv(
+        n_dims=params['env/n_dims'],
+        max_steps_per_episode=params['env/max_steps_per_episode'],
+        required_steps_above_reward_threshold=
+        params['env/required_steps_above_reward_threshold'])
     eval_log_scan = evaluator(env, agent, n_episodes=100, reward_scan=True)
     try:
         df_eval_log = pd.DataFrame({'rewards': eval_log_scan})
@@ -123,10 +146,9 @@ def run_full(params, worker_id=None):
         df_eval_log = pd.DataFrame(res_dict)
 
     df_eval_log.to_csv(out_path + '/eval_log_scan')
-    plot_evaluation_log(env, params['env']['max_steps_per_episode'],
+    plot_evaluation_log(env, params['env/max_steps_per_episode'],
                         eval_log_scan, save_path=out_path, type='scan')
 
-    # TODO: clean up... for now return the results from the scan evaluation
     return eval_log_random, eval_log_scan
 
 
@@ -147,83 +169,118 @@ def run_full(params, worker_id=None):
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!
 # TODO: LEARNING RATES MISSING
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-def run_worker(default_params: Dict, scan_param_value: [float, int],
-               scan_param_name: str, scan_param_name_sub: str = None):
-
-    n_stats = 10
-
-    # Copy default parameters and overwrite the corresponding scan parameter
-    params = default_params.copy()
-    if scan_param_name_sub is None:
-        params.update({scan_param_name: scan_param_value})
-    else:
-        params.update({
-            scan_param_name: {scan_param_name_sub: scan_param_value}})
-
-    results_worker = {
-        scan_param_value: {'random': {'steps_avg': np.zeros(n_stats),
-                                      'steps_max': np.zeros(n_stats)},
-                           'scan': {'steps_avg': np.zeros(n_stats),
-                                    'steps_max': np.zeros(n_stats)}}
-    }
-
-    worker_id = mp.current_process().name.split('-')[-1]
-    for i in range(n_stats):
-        eval_log_random, eval_log_scan = run_full(params, worker_id)
-
-        # Count number of steps per episode (RANDOM evaluation)
-        n_steps = np.array([(len(rew) - 1) for rew in eval_log_random])
-        max_n_steps = np.max(n_steps)
-        avg_n_steps = np.mean(n_steps)
-        results_worker[scan_param_value]['random']['steps_avg'][i] = avg_n_steps
-        results_worker[scan_param_value]['random']['steps_max'][i] = max_n_steps
-
-        # Count number of steps per episode (SCAN evaluation)
-        n_steps = np.array([(len(rew) - 1) for rew in eval_log_scan])
-        max_n_steps = np.max(n_steps)
-        avg_n_steps = np.mean(n_steps)
-        results_worker[scan_param_value]['scan']['steps_avg'][i] = avg_n_steps
-        results_worker[scan_param_value]['scan']['steps_max'][i] = max_n_steps
-
-    with open(f'bkp_res_{scan_param_name}_{scan_param_value}.pkl', 'wb') as fid:
-        pickle.dump(results_worker, fid)
-
-    return results_worker
+# def run_scan(eps, default_params):
+#     n_stats = 2
+#     results_worker = {}
+#     params = default_params.copy()
+#     params.update({'eps': eps})
+#
+#     worker_id = mp.current_process().name.split('-')[-1]
+#     print('worker_id', worker_id)
+#     for i in range(n_stats):
+#         sleep = np.random.randint(low=1, high=10, size=1)[0]
+#         time.sleep(sleep)
+#         print(f'Stats run {i}, Params: {params}, Sleeping for: {sleep}')
+#         results_worker[(i, eps)] = sleep
+#
+#     # with open(f'res_eps_{eps}.pkl', 'wb') as fid:
+#     #     pickle.dump(results_worker, fid)
+#
+#     return results_worker
+#
+#
+# if __name__ == '__main__':
+#     default_params = {'eps': 0., 'lr': 3e-4, 'n_anneals': 50}
+#     eps_init_scan = [0.1, 0.2, 0.3, 0.4]
+#
+#     results_all = {}
+#     with mp.Pool(4) as p:
+#
+#         res = p.map(partial(run_scan, default_params=default_params),
+#                     eps_init_scan)
+#         for r in res:
+#             results_all.update(r)
+#
+#     # with open('res_all_eps.pkl', 'wb') as fid:
+#     #     pickle.dump(results_all, fid)
 
 
-if __name__ == '__main__':
-    default_params = {
-        'quantum_ddpg': True,
-        'n_episodes': 200,
-        'env': {'n_dims': 6, 'max_steps_per_episode': 50,
-                'required_steps_above_reward_threshold': 1},
-        'trainer': {'batch_size': 32,
-                    'n_exploration_steps': 50,
-                    'n_episodes_early_stopping': 15},
-        'agent': {'gamma': 0.99, 'tau_critic': 0.1, 'tau_actor': 0.1},
-        'lr_critic': {'init': 5e-4, 'decay_factor': 0.95},
-        'lr_actor': {'init': 1e-4, 'decay_factor': 0.95},
-        'action_noise': {'init': 0.1, 'final': 0.},
-        'epsilon_greedy': {'init': 0.3, 'final': 0.},
-        'anneals': {'n_pieces': 2, 'init': 1, 'final': 50}
-    }
-
-    scan_param_values = [0.1, 0.2, 0.3, 0.4]
-    scan_param_name = 'epsilon_greedy'
-    scan_param_name_sub = 'init'
-
-    results_all = {}
-    with mp.Pool(max(len(scan_param_values), 8)) as p:
-        res = p.map(partial(run_worker, default_params=default_params,
-                            scan_param_name=scan_param_name,
-                            scan_param_name_sub=scan_param_name_sub),
-                    scan_param_values)
-        for r in res:
-            results_all.update(r)
-
-    with open(f'scan_res_all_{scan_param_name}.pkl', 'wb') as fid:
-        pickle.dump(results_all, fid)
+# def run_worker(default_params, scan_param_value: [float, int],
+#                scan_param_name: str, scan_param_name_sub: str = None):
+#
+#     n_stats = 10
+#
+#     # Copy default parameters and overwrite the corresponding scan parameter
+#     params = default_params.copy()
+#     if scan_param_name_sub is None:
+#         params.update({scan_param_name: scan_param_value})
+#     else:
+#         params.update({
+#             scan_param_name: {scan_param_name_sub: scan_param_value}})
+#
+#     results_worker = {
+#         scan_param_value: {'random': {'steps_avg': np.zeros(n_stats),
+#                                       'steps_max': np.zeros(n_stats)},
+#                            'scan': {'steps_avg': np.zeros(n_stats),
+#                                     'steps_max': np.zeros(n_stats)}}
+#     }
+#
+#     worker_id = mp.current_process().name.split('-')[-1]
+#     for i in range(n_stats):
+#         eval_log_random, eval_log_scan = run_full(params, scan_param_value)
+#
+#         # Count number of steps per episode (RANDOM evaluation)
+#         n_steps = np.array([(len(rew) - 1) for rew in eval_log_random])
+#         max_n_steps = np.max(n_steps)
+#         avg_n_steps = np.mean(n_steps)
+#         results_worker[scan_param_value]['random']['steps_avg'][i] = avg_n_steps
+#         results_worker[scan_param_value]['random']['steps_max'][i] = max_n_steps
+#
+#         # Count number of steps per episode (SCAN evaluation)
+#         n_steps = np.array([(len(rew) - 1) for rew in eval_log_scan])
+#         max_n_steps = np.max(n_steps)
+#         avg_n_steps = np.mean(n_steps)
+#         results_worker[scan_param_value]['scan']['steps_avg'][i] = avg_n_steps
+#         results_worker[scan_param_value]['scan']['steps_max'][i] = max_n_steps
+#
+#     with open(f'bkp_res_{scan_param_name}_{scan_param_value}.pkl', 'wb') as fid:
+#         pickle.dump(results_worker, fid)
+#
+#     return results_worker
+#
+#
+# if __name__ == '__main__':
+#     default_params = {
+#         'quantum_ddpg': True,
+#         'n_episodes': 10,
+#         'env': {'n_dims': 4, 'max_steps_per_episode': 10,
+#                 'required_steps_above_reward_threshold': 1},
+#         'trainer': {'batch_size': 16,
+#                     'n_exploration_steps': 5,
+#                     'n_episodes_early_stopping': 15},
+#         'agent': {'gamma': 0.99, 'tau_critic': 0.1, 'tau_actor': 0.1},
+#         'lr_critic': {'init': 5e-4, 'decay_factor': 0.95},
+#         'lr_actor': {'init': 1e-4, 'decay_factor': 0.95},
+#         'action_noise': {'init': 0.1, 'final': 0.},
+#         'epsilon_greedy': {'init': 0.3, 'final': 0.},
+#         'anneals': {'n_pieces': 2, 'init': 1, 'final': 2}
+#     }
+#
+#     scan_param_values = [0.1, 0.2, 0.3, 0.4]
+#     scan_param_name = 'epsilon_greedy'
+#     scan_param_name_sub = 'init'
+#
+#     results_all = {}
+#     with mp.Pool(max(len(scan_param_values), 8)) as p:
+#         res = p.map(partial(run_worker, default_params=default_params,
+#                             scan_param_name=scan_param_name,
+#                             scan_param_name_sub=scan_param_name_sub),
+#                     scan_param_values)
+#         for r in res:
+#             results_all.update(r)
+#
+#     with open(f'scan_res_all_{scan_param_name}.pkl', 'wb') as fid:
+#         pickle.dump(results_all, fid)
 
 
 """
