@@ -89,7 +89,7 @@ class ClassicalDDPG:
         action += noise_scale * np.random.randn(self.n_dims_action_space)
         return np.clip(action, -1., 1.)
 
-    def update(self, batch_size):
+    def update(self, batch_size, *args):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
@@ -136,40 +136,40 @@ class ClassicalDDPG:
     def _get_gradients_actor(self, states, batch_size):
         """ Update the main actor network based on given batch of input
         states. """
-        # with tf.GradientTape() as tape2:
-        #     A_mu = self.mu(X)
-        #     Q_mu = self.q_mu([X, A_mu])
-        #     self.q_before.append(Q_mu[0])
-        #     mu_loss = -tf.reduce_mean(Q_mu)
-        # grads_mu = tape2.gradient(mu_loss, self.mu.trainable_variables)
-        # self.mu_losses.append(mu_loss)
+        with tf.GradientTape() as tape2:
+            A_mu = self.main_actor_net(states)
+            Q_mu = self.main_critic_net([states, A_mu])
+            self.q_log['before'].append(Q_mu[0])
+            mu_loss = -tf.reduce_mean(Q_mu)
+        grads_mu = tape2.gradient(mu_loss, self.main_actor_net.trainable_variables)
+        self.losses_log['Mu'].append(mu_loss)
 
         # The same thing as above implemented manually to be as close to
         # QuantumDDPG implementation as possible
         # TODO: find out where the tensorflow warning comes from and try to
         #  speed up the code ...
-        with tf.GradientTape() as tape2:
-            a_mu = self.main_actor_net(states)
-        jacobi_mu_wrt_mu_theta = tape2.jacobian(
-            a_mu, self.main_actor_net.trainable_variables
-        )
-
-        with tf.GradientTape() as tape3:
-            tape3.watch(a_mu)
-            q_mu = self.main_critic_net([states, a_mu])
-            self.q_log['before'].append(np.mean(q_mu))
-
-        grad_q_wrt_a = tape3.gradient(q_mu, a_mu)
-
-        grads_mu = []
-        for i in range(len(jacobi_mu_wrt_mu_theta)):
-            on_batch = tf.tensordot(
-                jacobi_mu_wrt_mu_theta[i], grad_q_wrt_a,
-                axes=((0, 1), (0, 1)))
-            on_batch /= batch_size
-            grads_mu.append(-on_batch)
-
-        # Just for logging
+        # with tf.GradientTape() as tape2:
+        #     a_mu = self.main_actor_net(states)
+        # jacobi_mu_wrt_mu_theta = tape2.jacobian(
+        #     a_mu, self.main_actor_net.trainable_variables
+        # )
+        #
+        # with tf.GradientTape() as tape3:
+        #     tape3.watch(a_mu)
+        #     q_mu = self.main_critic_net([states, a_mu])
+        #     self.q_log['before'].append(np.mean(q_mu))
+        #
+        # grad_q_wrt_a = tape3.gradient(q_mu, a_mu)
+        #
+        # grads_mu = []
+        # for i in range(len(jacobi_mu_wrt_mu_theta)):
+        #     on_batch = tf.tensordot(
+        #         jacobi_mu_wrt_mu_theta[i], grad_q_wrt_a,
+        #         axes=((0, 1), (0, 1)))
+        #     on_batch /= batch_size
+        #     grads_mu.append(-on_batch)
+        #
+        # # Just for logging
         mean_ = 0.
         min_ = 1E39
         max_ = -1E39
@@ -251,7 +251,8 @@ class QuantumDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [512, 200, 128]
+        # actor_hidden_layers = [512, 200, 128]
+        actor_hidden_layers = [20, 10]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
