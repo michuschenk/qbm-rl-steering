@@ -40,7 +40,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
         n_random_steps_episode = 0
         n_steps_episode = 0
 
-        state = env.reset(init_outside_threshold=True)
+        # state = env.reset(init_outside_threshold=True)
+        state = env.reset(init_outside_threshold=False)
         episode_log['initial_rewards'].append(env.calculate_reward(
             env.calculate_state(env.kick_angles)))
 
@@ -124,9 +125,7 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
                 # (for n_steps_episode)
                 tqdm_desc = f'Learning progress -- Episode {episode}'
                 for __ in tqdm.trange(n_steps_episode, desc=tqdm_desc):
-                    agent.update(min(agent.replay_buffer.size, batch_size),
-                                 episode)
-
+                    agent.update(batch_size, episode)
                 break
 
             state = next_state
@@ -166,7 +165,10 @@ def evaluator(env, agent, n_episodes, reward_scan=True):
 
         n_steps_eps = 0
         while True:
-            a = agent.get_proposed_action(state, noise_scale=0)
+            try:
+                a = agent.get_proposed_action(state, noise_scale=0)
+            except:
+                a, _ = agent.predict(state, deterministic=True)
             state, reward, done, _ = env.step(a)
             rewards.append(reward)
             if done:
@@ -232,12 +234,26 @@ def plot_training_log(env, agent, data, save_path=None):
     plt.plot(agent.actor_grads_log['mean'], label='mean')
     plt.plot(agent.actor_grads_log['min'], label='min')
     plt.plot(agent.actor_grads_log['max'], label='max')
-    plt.ylabel('Grads')
+    plt.ylabel('Actor grads')
     plt.xlabel('Training iterations')
     plt.legend()
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path + '/train_log_grads.png', dpi=150)
+        plt.savefig(save_path + '/train_log_actor_grads.png', dpi=150)
+        plt.close()
+    else:
+        plt.show()
+
+    fig41 = plt.figure()
+    plt.plot(agent.critic_grads_log['mean'], label='mean')
+    plt.plot(agent.critic_grads_log['min'], label='min')
+    plt.plot(agent.critic_grads_log['max'], label='max')
+    plt.ylabel('Critic grads')
+    plt.xlabel('Training iterations')
+    plt.legend()
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path + '/train_log_critic_grads.png', dpi=150)
         plt.close()
     else:
         plt.show()

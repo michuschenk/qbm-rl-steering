@@ -2,6 +2,8 @@
 # https://deeplearningcourses.com/c/cutting-edge-artificial-intelligence
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.losses import MSE
+
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 from qbm_rl_steering.core.utils import (generate_classical_critic,
@@ -17,7 +19,8 @@ from qbm_rl_steering.core.qbm import QFunction
 
 class ClassicalDDPG:
     def __init__(self, state_space, action_space, gamma, tau_critic, tau_actor,
-                 learning_rate_schedule_critic, learning_rate_schedule_actor):
+                 learning_rate_critic, learning_rate_actor, grad_clip_actor,
+                 grad_clip_critic):
         """ Implements the classical DDPG agent where both actor and critic
         are represented by classical neural networks.
         :param state_space: openAI gym env state space
@@ -36,13 +39,13 @@ class ClassicalDDPG:
         self.tau_critic = tau_critic
         self.tau_actor = tau_actor
 
-        # Learning rate schedules
-        self.lr_schedule_critic = learning_rate_schedule_critic
-        self.lr_schedule_actor = learning_rate_schedule_actor
+        self.grad_clip_actor = grad_clip_actor
+        self.grad_clip_critic = grad_clip_critic
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [512, 200, 128]
+        actor_hidden_layers = [64, 32]
+        # actor_hidden_layers = [64, 32]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -51,7 +54,8 @@ class ClassicalDDPG:
             actor_hidden_layers)
 
         # CRITIC
-        critic_hidden_layers = [200, 100, 1]
+        # critic_hidden_layers = [100, 50, 1]
+        critic_hidden_layers = [64, 32, 1]
         self.main_critic_net = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space,
             critic_hidden_layers)
@@ -65,18 +69,19 @@ class ClassicalDDPG:
 
         # Optimizers
         self.actor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=self.lr_schedule_actor)
+            learning_rate_actor, amsgrad=True)
         self.critic_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=self.lr_schedule_critic)
+            learning_rate_critic, amsgrad=True)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
             size=int(1e6), obs_dim=self.n_dims_state_space,
             act_dim=self.n_dims_action_space)
+        # self.replay_buffer = ReplayBuffer(buffer_size=int(1e6))
 
         # For logging
         # TODO: add critic gradient statistics as well?
-        # self.critic_grads_log = {'mean': [], 'min': [], 'max': []}
+        self.critic_grads_log = {'mean': [], 'min': [], 'max': []}
         self.actor_grads_log = {'mean': [], 'min': [], 'max': []}
         self.losses_log = {'Q': [], 'Mu': []}
         self.q_log = {'before': [], 'after': []}
@@ -93,17 +98,18 @@ class ClassicalDDPG:
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
+        # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
+        d = np.asarray(d, dtype=np.float32)
 
-        grads_critic = self._get_gradients_critic(s, a, r, s2)
-        grads_actor = self._get_gradients_actor(s, batch_size)
-
-        # Simultaneous update of actor and critic
+        grads_critic = self._get_gradients_critic(s, a, r, s2, d)
         self.critic_optimizer.apply_gradients(
             zip(grads_critic, self.main_critic_net.trainable_variables))
+
+        grads_actor = self._get_gradients_actor(s, batch_size)
         self.actor_optimizer.apply_gradients(
             zip(grads_actor, self.main_actor_net.trainable_variables))
 
@@ -117,19 +123,38 @@ class ClassicalDDPG:
         # Apply Polyak updates
         self._update_target_networks()
 
-    def _get_gradients_critic(self, state, action, reward, next_state):
+    def _get_gradients_critic(self, state, action, reward, next_state, d):
         """ Update the main critic network based on given batch of input
         states. """
         with tf.GradientTape() as tape:
             next_action = self.target_actor_net(next_state)
-            q_target = (reward + self.gamma *
+            q_target = (reward + self.gamma * (1. - d) *
                         self.target_critic_net([next_state, next_action]))
             q_vals = self.main_critic_net([state, action])
-            q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
+            # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
+            # q_loss = MSE(q_target, q_vals)
+            q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
 
         grads_q = tape.gradient(
             q_loss, self.main_critic_net.trainable_variables)
+        grads_q = [tf.clip_by_value(
+            grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
+            grads_q]
         self.losses_log['Q'].append(q_loss)
+
+        # Just for logging
+        mean_ = 0.
+        min_ = 1E39
+        max_ = -1E39
+        for grd in grads_q:
+            mean_ += np.mean(grd)
+            min_ = min(np.min(grd), min_)
+            max_ = max(np.max(grd), max_)
+        mean_ /= len(grads_q)
+
+        self.critic_grads_log['min'].append(min_)
+        self.critic_grads_log['max'].append(max_)
+        self.critic_grads_log['mean'].append(mean_)
 
         return grads_q
 
@@ -139,9 +164,13 @@ class ClassicalDDPG:
         with tf.GradientTape() as tape2:
             A_mu = self.main_actor_net(states)
             Q_mu = self.main_critic_net([states, A_mu])
-            self.q_log['before'].append(Q_mu[0])
+            self.q_log['before'].append(np.mean(Q_mu))
             mu_loss = -tf.reduce_mean(Q_mu)
-        grads_mu = tape2.gradient(mu_loss, self.main_actor_net.trainable_variables)
+        grads_mu = tape2.gradient(mu_loss,
+                                  self.main_actor_net.trainable_variables)
+        grads_mu = [tf.clip_by_value(
+            grad, -self.grad_clip_actor, self.grad_clip_actor) for grad in
+            grads_mu]
         self.losses_log['Mu'].append(mu_loss)
 
         # The same thing as above implemented manually to be as close to
@@ -168,8 +197,8 @@ class ClassicalDDPG:
         #         axes=((0, 1), (0, 1)))
         #     on_batch /= batch_size
         #     grads_mu.append(-on_batch)
-        #
-        # # Just for logging
+
+        # Just for logging
         mean_ = 0.
         min_ = 1E39
         max_ = -1E39
@@ -251,8 +280,8 @@ class QuantumDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        # actor_hidden_layers = [512, 200, 128]
-        actor_hidden_layers = [20, 10]
+        actor_hidden_layers = [512, 200, 128]
+        # actor_hidden_layers = [20, 10]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -279,6 +308,7 @@ class QuantumDDPG:
         self.replay_buffer = ReplayBuffer(
             size=int(1e6), obs_dim=self.n_dims_state_space,
             act_dim=self.n_dims_action_space)
+        # self.replay_buffer = ReplayBuffer(buffer_size=int(1e6))
 
         # For logging
         # TODO: add critic gradient statistics as well?
@@ -298,6 +328,7 @@ class QuantumDDPG:
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
+        # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)

@@ -2,6 +2,9 @@ from stable_baselines3 import DDPG
 from stable_baselines3.common.noise import NormalActionNoise
 
 from qbm_rl_steering.environment.rms_env_nd import RmsSteeringEnv
+from qbm_rl_steering.core.run_utils import (evaluator,
+                                        plot_training_log,
+                                        plot_evaluation_log)
 
 import numpy as np
 
@@ -39,6 +42,13 @@ env = RmsSteeringEnv(
 n_actions = env.action_space.shape[-1]
 action_noise = NormalActionNoise(mean=np.zeros(n_actions),
                                  sigma=0.1*np.ones(n_actions))
-model = DDPG('MlpPolicy', env, action_noise=action_noise, verbose=1)
-model.learn(total_timesteps=1000, log_interval=10)
+agent = DDPG('MlpPolicy', env, action_noise=action_noise, verbose=1)
+agent.learn(total_timesteps=600, log_interval=10)
 
+env = RmsSteeringEnv(
+  n_dims=params['env/n_dims'],
+  max_steps_per_episode=params['env/max_steps_per_episode'],
+  required_steps_above_reward_threshold=params['env/required_steps_above_reward_threshold'])
+eval_log_scan = evaluator(env, agent, n_episodes=100, reward_scan=True)
+plot_evaluation_log(env, params['env/max_steps_per_episode'],
+                eval_log_scan, save_path='./', type='scan')

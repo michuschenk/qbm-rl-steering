@@ -152,7 +152,7 @@ class RmsSteeringEnv(gym.Env):
             required_steps_above_reward_threshold
         self.steps_above_reward_threshold = None
         self.max_steps_above_reward_threshold = None
-        # self.cancel_on_reward = self.reward_threshold * 20
+        self.cancel_on_reward = self.reward_threshold * 10
 
         # Logging
         self.interaction_logger = Logger()
