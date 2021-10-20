@@ -40,8 +40,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
         n_random_steps_episode = 0
         n_steps_episode = 0
 
-        # state = env.reset(init_outside_threshold=True)
-        state = env.reset(init_outside_threshold=False)
+        state = env.reset(init_outside_threshold=True)
+        # state = env.reset(init_outside_threshold=False)
         episode_log['initial_rewards'].append(env.calculate_reward(
             env.calculate_state(env.kick_angles)))
 

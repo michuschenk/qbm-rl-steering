@@ -46,7 +46,7 @@ class ClassicalDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [64, 32]
+        actor_hidden_layers = [48, 32]
         # actor_hidden_layers = [64, 32]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
@@ -57,7 +57,7 @@ class ClassicalDDPG:
 
         # CRITIC
         # critic_hidden_layers = [100, 50, 1]
-        critic_hidden_layers = [64, 32, 1]
+        critic_hidden_layers = [48, 32, 1]
         self.main_critic_net_1 = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space,
             critic_hidden_layers)
@@ -79,8 +79,10 @@ class ClassicalDDPG:
             self.main_critic_net_2.get_weights())
 
         # Optimizers
-        self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate_actor)
-        self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate_critic)
+        self.actor_optimizer = tf.keras.optimizers.Adam(
+            learning_rate_actor)
+        self.critic_optimizer = tf.keras.optimizers.Adam(
+            learning_rate_critic)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
@@ -148,8 +150,8 @@ class ClassicalDDPG:
 
             # TD3: add noise to next_action
             # Select action according to policy and add clipped noise
-            policy_noise = 0.1
-            noise_clip = 0.3
+            policy_noise = 0.2
+            noise_clip = 0.4
             noise = policy_noise * np.random.randn(
                 next_action.shape[0] * next_action.shape[1]).reshape(
                 next_action.shape[0], next_action.shape[1])

@@ -92,7 +92,7 @@ def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int,
     for i, j in enumerate(hidden_layers[:-1]):
         if i == 1:
             x = concatenate([x, input_action], axis=-1)
-        x = Dense(j, activation='relu')(x)
+        x = Dense(j, activation=tf.nn.leaky_relu)(x)
     x = Dense(hidden_layers[-1])(x)
 
     return tf.keras.Model([input_state, input_action], x)
@@ -187,7 +187,7 @@ def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int,
     input_state = Input(shape=n_dims_state_space)
     x = input_state
     for i in hidden_layers:
-        x = Dense(i, activation='relu',
+        x = Dense(i, activation=tf.nn.leaky_relu,
                   kernel_initializer=glorot_normal())(x)
     x = Dense(n_dims_action_space, activation='tanh',
               kernel_initializer=random_normal_initializer(stddev=0.0005))(x)
