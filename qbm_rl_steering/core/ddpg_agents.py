@@ -31,6 +31,8 @@ class ClassicalDDPG:
         :param learning_rate_schedule_critic: learning rate schedule for critic.
         :param learning_rate_schedule_actor: learning rate schedule for actor.
         """
+        self.step_count = 0
+
         self.n_dims_state_space = len(state_space.high)
         self.n_dims_action_space = len(action_space.high)
 
@@ -44,7 +46,7 @@ class ClassicalDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [64, 32]
+        actor_hidden_layers = [64, 64]
         # actor_hidden_layers = [64, 32]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
@@ -55,23 +57,30 @@ class ClassicalDDPG:
 
         # CRITIC
         # critic_hidden_layers = [100, 50, 1]
-        critic_hidden_layers = [64, 32, 1]
-        self.main_critic_net = generate_classical_critic(
+        critic_hidden_layers = [64, 64, 1]
+        self.main_critic_net_1 = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space,
             critic_hidden_layers)
-        self.target_critic_net = generate_classical_critic(
+        self.main_critic_net_2 = generate_classical_critic(
+            self.n_dims_state_space, self.n_dims_action_space,
+            critic_hidden_layers)
+        self.target_critic_net_1 = generate_classical_critic(
+            self.n_dims_state_space, self.n_dims_action_space,
+            critic_hidden_layers)
+        self.target_critic_net_2 = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space,
             critic_hidden_layers)
 
         # Copy weights from main to target nets
         self.target_actor_net.set_weights(self.main_actor_net.get_weights())
-        self.target_critic_net.set_weights(self.main_critic_net.get_weights())
+        self.target_critic_net_1.set_weights(
+            self.main_critic_net_1.get_weights())
+        self.target_critic_net_2.set_weights(
+            self.main_critic_net_2.get_weights())
 
         # Optimizers
-        self.actor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_actor, amsgrad=True)
-        self.critic_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_critic, amsgrad=True)
+        self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate_actor)
+        self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate_critic)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
@@ -97,6 +106,7 @@ class ClassicalDDPG:
     def update(self, batch_size, *args):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
+
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
         # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
@@ -105,65 +115,99 @@ class ClassicalDDPG:
         s2 = np.asarray(s2, dtype=np.float32)
         d = np.asarray(d, dtype=np.float32)
 
-        grads_critic = self._get_gradients_critic(s, a, r, s2, d)
+        grads_critic_1, grads_critic_2 = self._get_gradients_critic(
+            s, a, r, s2, d)
         self.critic_optimizer.apply_gradients(
-            zip(grads_critic, self.main_critic_net.trainable_variables))
+            zip(grads_critic_1, self.main_critic_net_1.trainable_variables))
+        self.critic_optimizer.apply_gradients(
+            zip(grads_critic_2, self.main_critic_net_2.trainable_variables))
 
-        grads_actor = self._get_gradients_actor(s, batch_size)
-        self.actor_optimizer.apply_gradients(
-            zip(grads_actor, self.main_actor_net.trainable_variables))
+        # TD3 feature: delay
+        if self.step_count % 2 == 0:
+            grads_actor = self._get_gradients_actor(s, batch_size)
+            self.actor_optimizer.apply_gradients(
+                zip(grads_actor, self.main_actor_net.trainable_variables))
 
-        # This is for debugging only, i.e. not required for algorithm
-        # to work: evaluate Q value for actor after update: providing same
-        # state, should now evaluate to higher Q.
-        a_mu_after = self.main_actor_net(s)
-        q_mu_after = self.main_critic_net([s, a_mu_after])
-        self.q_log['after'].append(np.mean(q_mu_after))
+            # This is for debugging only, i.e. not required for algorithm
+            # to work: evaluate Q value for actor after update: providing same
+            # state, should now evaluate to higher Q.
+            a_mu_after = self.main_actor_net(s)
+            q_mu_after = self.main_critic_net_1([s, a_mu_after])
+            self.q_log['after'].append(np.mean(q_mu_after))
 
-        # Apply Polyak updates
-        self._update_target_networks()
+            # Apply Polyak updates
+            self._update_target_networks()
+
+        self.step_count += 1
 
     def _get_gradients_critic(self, state, action, reward, next_state, d):
         """ Update the main critic network based on given batch of input
         states. """
-        with tf.GradientTape() as tape:
+        with tf.GradientTape(persistent=True) as tape:
             next_action = self.target_actor_net(next_state)
-            q_target = (reward + self.gamma * (1. - d) *
-                        self.target_critic_net([next_state, next_action]))
-            q_vals = self.main_critic_net([state, action])
+
+            # TD3: add noise to next_action
+            # Select action according to policy and add clipped noise
+            policy_noise = 0.1
+            noise_clip = 0.5
+            noise = policy_noise * np.random.randn(
+                next_action.shape[0] * next_action.shape[1]).reshape(
+                next_action.shape[0], next_action.shape[1])
+            noise = np.clip(noise, a_min=-noise_clip, a_max=noise_clip)
+            next_action = np.clip(next_action + noise, -1., 1.)
+
+            q1 = self.target_critic_net_1([next_state, next_action])
+            q2 = self.target_critic_net_2([next_state, next_action])
+            q_target = np.min(np.stack((q1, q2)), axis=0)
+            q_target = (reward + self.gamma * (1. - d) * q_target)
+
+            q_vals_1 = self.main_critic_net_1([state, action])
+            q_vals_2 = self.main_critic_net_2([state, action])
+
             # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
             # q_loss = MSE(q_target, q_vals)
-            q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
+            # q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
+            q_loss_1 = tf.reduce_mean(tf.math.square(q_vals_1 - q_target))
+            q_loss_2 = tf.reduce_mean(tf.math.square(q_vals_2 - q_target))
 
-        grads_q = tape.gradient(
-            q_loss, self.main_critic_net.trainable_variables)
-        grads_q = [tf.clip_by_value(
+        grads_q_1 = tape.gradient(
+            q_loss_1, self.main_critic_net_1.trainable_variables)
+        grads_q_1 = [tf.clip_by_value(
             grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
-            grads_q]
-        self.losses_log['Q'].append(q_loss)
+            grads_q_1]
+
+        grads_q_2 = tape.gradient(
+            q_loss_2, self.main_critic_net_2.trainable_variables)
+        grads_q_2 = [tf.clip_by_value(
+            grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
+            grads_q_2]
+
+        # Have created tape as persistent, need to clean up manually
+        del tape
+        self.losses_log['Q'].append(q_loss_1)
 
         # Just for logging
         mean_ = 0.
         min_ = 1E39
         max_ = -1E39
-        for grd in grads_q:
+        for grd in grads_q_1:
             mean_ += np.mean(grd)
             min_ = min(np.min(grd), min_)
             max_ = max(np.max(grd), max_)
-        mean_ /= len(grads_q)
+        mean_ /= len(grads_q_1)
 
         self.critic_grads_log['min'].append(min_)
         self.critic_grads_log['max'].append(max_)
         self.critic_grads_log['mean'].append(mean_)
 
-        return grads_q
+        return grads_q_1, grads_q_2
 
     def _get_gradients_actor(self, states, batch_size):
         """ Update the main actor network based on given batch of input
         states. """
         with tf.GradientTape() as tape2:
             A_mu = self.main_actor_net(states)
-            Q_mu = self.main_critic_net([states, A_mu])
+            Q_mu = self.main_critic_net_1([states, A_mu])
             self.q_log['before'].append(np.mean(Q_mu))
             mu_loss = -tf.reduce_mean(Q_mu)
         grads_mu = tape2.gradient(mu_loss,
@@ -216,12 +260,18 @@ class ClassicalDDPG:
 
     def _update_target_networks(self):
         """ Apply Polyak update to both target networks. """
-        # CRITIC
-        target_weights = np.array(self.target_critic_net.get_weights())
-        main_weights = np.array(self.main_critic_net.get_weights())
+        # CRITICS
+        target_weights = np.array(self.target_critic_net_1.get_weights())
+        main_weights = np.array(self.main_critic_net_1.get_weights())
         new_target_weights = (self.tau_critic * main_weights +
                               (1 - self.tau_critic) * target_weights)
-        self.target_critic_net.set_weights(new_target_weights)
+        self.target_critic_net_1.set_weights(new_target_weights)
+
+        target_weights = np.array(self.target_critic_net_2.get_weights())
+        main_weights = np.array(self.main_critic_net_2.get_weights())
+        new_target_weights = (self.tau_critic * main_weights +
+                              (1 - self.tau_critic) * target_weights)
+        self.target_critic_net_2.set_weights(new_target_weights)
 
         # ACTOR
         target_weights = np.array(self.target_actor_net.get_weights())

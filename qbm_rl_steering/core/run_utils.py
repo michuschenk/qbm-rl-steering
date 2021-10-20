@@ -40,15 +40,17 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
         n_random_steps_episode = 0
         n_steps_episode = 0
 
-        # state = env.reset(init_outside_threshold=True)
-        state = env.reset(init_outside_threshold=False)
+        state = env.reset(init_outside_threshold=True)
+        # state = env.reset(init_outside_threshold=False)
         episode_log['initial_rewards'].append(env.calculate_reward(
             env.calculate_state(env.kick_angles)))
 
         # Apply n_anneals_schedule
         n_anneals = int(n_anneals_schedule(episode).numpy())
-        agent.main_critic_net.n_meas_for_average = n_anneals
-        agent.target_critic_net.n_meas_for_average = n_anneals
+        agent.main_critic_net_1.n_meas_for_average = n_anneals
+        agent.target_critic_net_1.n_meas_for_average = n_anneals
+        agent.main_critic_net_2.n_meas_for_average = n_anneals
+        agent.target_critic_net_2.n_meas_for_average = n_anneals
 
         # Episode loop
         epsilon = epsilon_greedy_schedule(episode).numpy()
