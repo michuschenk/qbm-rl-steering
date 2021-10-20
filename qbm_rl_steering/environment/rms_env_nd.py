@@ -147,7 +147,8 @@ class RmsSteeringEnv(gym.Env):
         # Reward threshold is adjusted such that we require 0.0016 m at 10-D,
         # as in the original AWAKE environment. In n-D the reward_threshold is
         # scaled linearly with n. Hence at 1-D, threshold will be  0.00016 m.
-        self.reward_threshold = -self.reward_scale * self.n_dims * 1.6e-4
+        # self.reward_threshold = -self.reward_scale * self.n_dims * 1.6e-4
+        self.reward_threshold = -self.reward_scale * self.n_dims * 2e-4
         self.required_steps_above_reward_threshold = \
             required_steps_above_reward_threshold
         self.steps_above_reward_threshold = None

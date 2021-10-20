@@ -187,7 +187,7 @@ def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int,
     input_state = Input(shape=n_dims_state_space)
     x = input_state
     for i in hidden_layers:
-        x = Dense(i, activation=tf.nn.leaky_relu,
+        x = Dense(i, activation='relu',
                   kernel_initializer=glorot_normal())(x)
     x = Dense(n_dims_action_space, activation='tanh',
               kernel_initializer=random_normal_initializer(stddev=0.0005))(x)
