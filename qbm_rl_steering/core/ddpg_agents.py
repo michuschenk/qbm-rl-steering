@@ -46,8 +46,8 @@ class ClassicalDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [48, 32]
-        # actor_hidden_layers = [64, 32]
+        # actor_hidden_layers = [48, 32]
+        actor_hidden_layers = [512, 200, 128]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -121,11 +121,11 @@ class ClassicalDDPG:
             s, a, r, s2, d)
         self.critic_optimizer.apply_gradients(
             zip(grads_critic_1, self.main_critic_net_1.trainable_variables))
-        self.critic_optimizer.apply_gradients(
-            zip(grads_critic_2, self.main_critic_net_2.trainable_variables))
+        # self.critic_optimizer.apply_gradients(
+        #     zip(grads_critic_2, self.main_critic_net_2.trainable_variables))
 
         # TD3 feature: delay
-        if self.step_count % 2 == 0:
+        if self.step_count % 1 == 0:
             grads_actor = self._get_gradients_actor(s, batch_size)
             self.actor_optimizer.apply_gradients(
                 zip(grads_actor, self.main_actor_net.trainable_variables))
@@ -150,27 +150,28 @@ class ClassicalDDPG:
 
             # TD3: add noise to next_action
             # Select action according to policy and add clipped noise
-            policy_noise = 0.2
-            noise_clip = 0.4
-            noise = policy_noise * np.random.randn(
-                next_action.shape[0] * next_action.shape[1]).reshape(
-                next_action.shape[0], next_action.shape[1])
-            noise = np.clip(noise, a_min=-noise_clip, a_max=noise_clip)
-            next_action = np.clip(next_action + noise, -1., 1.)
+            # policy_noise = 0.2
+            # noise_clip = 0.4
+            # noise = policy_noise * np.random.randn(
+            #     next_action.shape[0] * next_action.shape[1]).reshape(
+            #     next_action.shape[0], next_action.shape[1])
+            # noise = np.clip(noise, a_min=-noise_clip, a_max=noise_clip)
+            # next_action = np.clip(next_action + noise, -1., 1.)
 
             q1 = self.target_critic_net_1([next_state, next_action])
-            q2 = self.target_critic_net_2([next_state, next_action])
-            q_target = np.min(np.stack((q1, q2)), axis=0)
-            q_target = (reward + self.gamma * (1. - d) * q_target)
+            # q2 = self.target_critic_net_2([next_state, next_action])
+            # q_target = np.min(np.stack((q1, q2)), axis=0)
+            # q_target = (reward + self.gamma * (1. - d) * q_target)
+            q_target = (reward + self.gamma * (1. - d) * q1)
 
             q_vals_1 = self.main_critic_net_1([state, action])
-            q_vals_2 = self.main_critic_net_2([state, action])
+            # q_vals_2 = self.main_critic_net_2([state, action])
 
             # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
             # q_loss = MSE(q_target, q_vals)
             # q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
             q_loss_1 = tf.reduce_mean((q_vals_1 - q_target)**2)
-            q_loss_2 = tf.reduce_mean((q_vals_2 - q_target)**2)
+            # q_loss_2 = tf.reduce_mean((q_vals_2 - q_target)**2)
 
         grads_q_1 = tape.gradient(
             q_loss_1, self.main_critic_net_1.trainable_variables)
@@ -178,11 +179,12 @@ class ClassicalDDPG:
             grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
             grads_q_1]
 
-        grads_q_2 = tape.gradient(
-            q_loss_2, self.main_critic_net_2.trainable_variables)
-        grads_q_2 = [tf.clip_by_value(
-            grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
-            grads_q_2]
+        grads_q_2 = None
+        # grads_q_2 = tape.gradient(
+        #     q_loss_2, self.main_critic_net_2.trainable_variables)
+        # grads_q_2 = [tf.clip_by_value(
+        #     grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
+        #     grads_q_2]
 
         # Have created tape as persistent, need to clean up manually
         del tape
@@ -332,8 +334,8 @@ class QuantumDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [512, 200, 128]
-        # actor_hidden_layers = [20, 10]
+        # actor_hidden_layers = [512, 200, 128]
+        actor_hidden_layers = [48, 32]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -385,13 +387,14 @@ class QuantumDDPG:
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
+        d = np.asarray(d, dtype=np.float32)
 
         # Invert order since _update_critic will directly apply gradient update
         # while _get_gradients_actor does not.
         # This is to ensure simultaneous update of actor and critic
         # TODO: Is this what we want really?
         grads_actor = self._get_gradients_actor(s, batch_size)
-        self._update_critic(s, a, r, s2, episode_count)
+        self._update_critic(s, a, r, s2, d, episode_count)
         self.actor_optimizer.apply_gradients(
             zip(grads_actor, self.main_actor_net.trainable_variables))
 
@@ -405,7 +408,8 @@ class QuantumDDPG:
         # Apply Polyak updates
         self._update_target_networks()
 
-    def _update_critic(self, state, action, reward, next_state, episode_count):
+    def _update_critic(self, state, action, reward, next_state,
+                       done, episode_count):
         """ Update the main critic network based on given batch of input
         states. """
         next_action = self.target_actor_net(next_state)
@@ -425,7 +429,8 @@ class QuantumDDPG:
             # Note that clipping is also done inside QBM update_weights
             # method ...
             self.main_critic_net.update_weights(
-                spin_configs, visible_nodes, q_value, target_q_value,
+                spin_configs, visible_nodes, q_value,
+                (1. - done[jj]) * target_q_value,
                 reward[jj],
                 learning_rate=self.lr_schedule_critic(episode_count).numpy(),
                 grad_clip=self.grad_clip_critic)

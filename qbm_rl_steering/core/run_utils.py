@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import tqdm
 
+from qbm_rl_steering.core.ddpg_agents import QuantumDDPG
+
 
 def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             action_noise_schedule, epsilon_greedy_schedule, n_anneals_schedule,
@@ -47,10 +49,14 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
 
         # Apply n_anneals_schedule
         n_anneals = int(n_anneals_schedule(episode).numpy())
-        agent.main_critic_net_1.n_meas_for_average = n_anneals
-        agent.target_critic_net_1.n_meas_for_average = n_anneals
-        agent.main_critic_net_2.n_meas_for_average = n_anneals
-        agent.target_critic_net_2.n_meas_for_average = n_anneals
+        if isinstance(agent, QuantumDDPG):
+            agent.main_critic_net.n_meas_for_average = n_anneals
+            agent.target_critic_net.n_meas_for_average = n_anneals
+        else:
+            agent.main_critic_net_1.n_meas_for_average = n_anneals
+            agent.target_critic_net_1.n_meas_for_average = n_anneals
+            agent.main_critic_net_2.n_meas_for_average = n_anneals
+            agent.target_critic_net_2.n_meas_for_average = n_anneals
 
         # Episode loop
         epsilon = epsilon_greedy_schedule(episode).numpy()
@@ -246,19 +252,20 @@ def plot_training_log(env, agent, data, save_path=None):
     else:
         plt.show()
 
-    fig41 = plt.figure()
-    plt.plot(agent.critic_grads_log['mean'], label='mean')
-    plt.plot(agent.critic_grads_log['min'], label='min')
-    plt.plot(agent.critic_grads_log['max'], label='max')
-    plt.ylabel('Critic grads')
-    plt.xlabel('Training iterations')
-    plt.legend()
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path + '/train_log_critic_grads.png', dpi=150)
-        plt.close()
-    else:
-        plt.show()
+    if not isinstance(agent, QuantumDDPG):
+        fig41 = plt.figure()
+        plt.plot(agent.critic_grads_log['mean'], label='mean')
+        plt.plot(agent.critic_grads_log['min'], label='min')
+        plt.plot(agent.critic_grads_log['max'], label='max')
+        plt.ylabel('Critic grads')
+        plt.xlabel('Training iterations')
+        plt.legend()
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path + '/train_log_critic_grads.png', dpi=150)
+            plt.close()
+        else:
+            plt.show()
 
     # e) Training evolution of final reward and #steps
     win = 10
