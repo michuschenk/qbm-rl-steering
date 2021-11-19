@@ -71,7 +71,11 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
                 action = env.action_space.sample()
                 n_random_steps_episode += 1
             else:
-                action = agent.get_proposed_action(state, action_noise)
+                action = agent.get_proposed_action(state)
+            # NEW: ADD ACTION NOISE IN ANY CASE, DURING RANDOM EXPLORATION AND WHEN SAMPLING
+            # FOLLOWING POLICY.
+            action += action_noise * np.random.randn(agent.n_dims_action_space)
+            action = np.clip(action, -1., 1.)
 
             next_state, reward, done, _ = env.step(action)
 
@@ -80,8 +84,9 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
 
             # Fill replay buffer
             terminal = done
-            if n_steps_episode == max_steps_per_episode:
-                terminal = False
+            # NEW: FOR SB3, DON'T CARE IF ENDED WITH SUCCESS OR DUE TO MAX STEPS. DONE=TRUE IN BOTH CASES.
+            #if n_steps_episode == max_steps_per_episode:
+            #    terminal = False
             agent.replay_buffer.push(state, action, reward, next_state,
                                      terminal)
 
@@ -174,7 +179,7 @@ def evaluator(env, agent, n_episodes, reward_scan=True):
         n_steps_eps = 0
         while True:
             try:
-                a = agent.get_proposed_action(state, noise_scale=0)
+                a = agent.get_proposed_action(state)
             except:
                 a, _ = agent.predict(state, deterministic=True)
             state, reward, done, _ = env.step(a)

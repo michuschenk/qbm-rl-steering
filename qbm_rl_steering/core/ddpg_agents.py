@@ -47,7 +47,7 @@ class ClassicalDDPG:
         # Main and target actor network initialization
         # ACTOR
         # actor_hidden_layers = [48, 32]
-        actor_hidden_layers = [512, 200, 128]
+        actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -57,7 +57,7 @@ class ClassicalDDPG:
 
         # CRITIC
         # critic_hidden_layers = [100, 50, 1]
-        critic_hidden_layers = [48, 32, 1]
+        critic_hidden_layers = [400, 300, 1]
         self.main_critic_net_1 = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space,
             critic_hidden_layers)
@@ -97,13 +97,12 @@ class ClassicalDDPG:
         self.losses_log = {'Q': [], 'Mu': []}
         self.q_log = {'before': [], 'after': []}
 
-    def get_proposed_action(self, state, noise_scale):
+    def get_proposed_action(self, state):
         """ Use main actor network to obtain proposed action for en input
-        state. Add potentially some Gaussian noise for exploration. Action is
-        clipped at [-1, 1] in any case. """
-        action = self.main_actor_net.predict(state.reshape(1, -1))[0]
-        action += noise_scale * np.random.randn(self.n_dims_action_space)
-        return np.clip(action, -1., 1.)
+        state. """
+        return self.main_actor_net.predict(state.reshape(1, -1))[0]
+        # action += noise_scale * np.random.randn(self.n_dims_action_space)
+        # return np.clip(action, -1., 1.)
 
     def update(self, batch_size, *args):
         """ Calculate and apply the updates of the critic and actor
@@ -147,6 +146,7 @@ class ClassicalDDPG:
         states. """
         with tf.GradientTape(persistent=True) as tape:
             next_action = self.target_actor_net(next_state)
+            next_action = np.clip(next_action, -1, 1)
 
             # TD3: add noise to next_action
             # Select action according to policy and add clipped noise
@@ -372,11 +372,10 @@ class QuantumDDPG:
 
     def get_proposed_action(self, state, noise_scale):
         """ Use main actor network to obtain proposed action for en input
-        state. Add potentially some Gaussian noise for exploration. Action is
-        clipped at [-1, 1] in any case. """
-        action = self.main_actor_net.predict(state.reshape(1, -1))[0]
-        action += noise_scale * np.random.randn(self.n_dims_action_space)
-        return np.clip(action, -1., 1.)
+        state. """
+        return self.main_actor_net.predict(state.reshape(1, -1))[0]
+        # action += noise_scale * np.random.randn(self.n_dims_action_space)
+        # return np.clip(action, -1., 1.)
 
     def update(self, batch_size, episode_count):
         """ Calculate and apply the updates of the critic and actor
