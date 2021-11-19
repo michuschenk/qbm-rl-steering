@@ -37,6 +37,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
 
     max_act = -np.inf
     min_act = np.inf
+    max_state = -np.inf
+    min_state = np.inf
 
     for episode in range(n_episodes):
         if early_stopping_counter >= n_episodes_early_stopping:
@@ -85,6 +87,9 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             action = np.clip(action, -1., 1.)
 
             next_state, reward, done, _ = env.step(action)
+
+            max_state = max(np.max(next_state), max_state)
+            min_state = min(np.min(next_state), min_state)
 
             n_steps_episode += 1
             n_total_steps_training += 1
@@ -151,6 +156,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             state = next_state
             print('max_act', max_act)
             print('min_act', min_act)
+            print('max_state', max_state)
+            print('min_state', min_state)
 
     return episode_log
 
