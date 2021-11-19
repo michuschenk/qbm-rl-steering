@@ -47,42 +47,35 @@ class ClassicalDDPG:
         # Main and target actor network initialization
         # ACTOR
         # actor_hidden_layers = [48, 32]
-        actor_hidden_layers = [400, 300]
+        # actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
-            self.n_dims_state_space, self.n_dims_action_space,
-            actor_hidden_layers)
+            self.n_dims_state_space, self.n_dims_action_space)
         self.target_actor_net = generate_classical_actor(
-            self.n_dims_state_space, self.n_dims_action_space,
-            actor_hidden_layers)
+            self.n_dims_state_space, self.n_dims_action_space)
 
         # CRITIC
         # critic_hidden_layers = [100, 50, 1]
-        critic_hidden_layers = [400, 300, 1]
+        # critic_hidden_layers = [400, 300, 1]
         self.main_critic_net_1 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space,
-            critic_hidden_layers)
-        self.main_critic_net_2 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space,
-            critic_hidden_layers)
+            self.n_dims_state_space, self.n_dims_action_space)
+        # self.main_critic_net_2 = generate_classical_critic(
+        #     self.n_dims_state_space, self.n_dims_action_space)
         self.target_critic_net_1 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space,
-            critic_hidden_layers)
-        self.target_critic_net_2 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space,
-            critic_hidden_layers)
+            self.n_dims_state_space, self.n_dims_action_space)
+        # self.target_critic_net_2 = generate_classical_critic(
+        #     self.n_dims_state_space, self.n_dims_action_space)
 
         # Copy weights from main to target nets
         self.target_actor_net.set_weights(self.main_actor_net.get_weights())
-        self.target_critic_net_1.set_weights(
-            self.main_critic_net_1.get_weights())
-        self.target_critic_net_2.set_weights(
-            self.main_critic_net_2.get_weights())
+        self.target_critic_net_1.set_weights(self.main_critic_net_1.get_weights())
+        # self.target_critic_net_2.set_weights(
+        #     self.main_critic_net_2.get_weights())
 
         # Optimizers
         self.actor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_actor)
+            learning_rate_actor, amsgrad=True)
         self.critic_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_critic)
+            learning_rate_critic, amsgrad=True)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
@@ -109,15 +102,13 @@ class ClassicalDDPG:
         networks based on batch of samples from experience replay buffer. """
 
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
-        # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)
         s2 = np.asarray(s2, dtype=np.float32)
         d = np.asarray(d, dtype=np.float32)
 
-        grads_critic_1, grads_critic_2 = self._get_gradients_critic(
-            s, a, r, s2, d)
+        grads_critic_1 = self._get_gradients_critic(s, a, r, s2, d)
         self.critic_optimizer.apply_gradients(
             zip(grads_critic_1, self.main_critic_net_1.trainable_variables))
         # self.critic_optimizer.apply_gradients(
@@ -146,7 +137,7 @@ class ClassicalDDPG:
         states. """
         with tf.GradientTape(persistent=True) as tape:
             next_action = self.target_actor_net(next_state)
-            next_action = np.clip(next_action, -1, 1)
+            # next_action = np.clip(next_action, -1, 1)
 
             # TD3: add noise to next_action
             # Select action according to policy and add clipped noise
@@ -170,16 +161,15 @@ class ClassicalDDPG:
             # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
             # q_loss = MSE(q_target, q_vals)
             # q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
-            q_loss_1 = tf.reduce_mean((q_vals_1 - q_target)**2)
+            q_loss_1 = tf.math.reduce_mean(tf.math.abs(q_target - q_vals_1))
             # q_loss_2 = tf.reduce_mean((q_vals_2 - q_target)**2)
 
-        grads_q_1 = tape.gradient(
-            q_loss_1, self.main_critic_net_1.trainable_variables)
-        grads_q_1 = [tf.clip_by_value(
-            grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
-            grads_q_1]
+        grads_q_1 = tape.gradient(q_loss_1, self.main_critic_net_1.trainable_variables)
+        # grads_q_1 = [tf.clip_by_value(
+        #     grad, -self.grad_clip_critic, self.grad_clip_critic) for grad in
+        #     grads_q_1]
 
-        grads_q_2 = None
+        # grads_q_2 = None
         # grads_q_2 = tape.gradient(
         #     q_loss_2, self.main_critic_net_2.trainable_variables)
         # grads_q_2 = [tf.clip_by_value(
@@ -204,7 +194,7 @@ class ClassicalDDPG:
         self.critic_grads_log['max'].append(max_)
         self.critic_grads_log['mean'].append(mean_)
 
-        return grads_q_1, grads_q_2
+        return grads_q_1  # , grads_q_2
 
     def _get_gradients_actor(self, states, batch_size):
         """ Update the main actor network based on given batch of input
@@ -213,12 +203,12 @@ class ClassicalDDPG:
             A_mu = self.main_actor_net(states)
             Q_mu = self.main_critic_net_1([states, A_mu])
             self.q_log['before'].append(np.mean(Q_mu))
-            mu_loss = -tf.reduce_mean(Q_mu)
+            mu_loss = -tf.math.reduce_mean(Q_mu)
         grads_mu = tape2.gradient(mu_loss,
                                   self.main_actor_net.trainable_variables)
-        grads_mu = [tf.clip_by_value(
-            grad, -self.grad_clip_actor, self.grad_clip_actor) for grad in
-            grads_mu]
+        # grads_mu = [tf.clip_by_value(
+        #     grad, -self.grad_clip_actor, self.grad_clip_actor) for grad in
+        #     grads_mu]
         self.losses_log['Mu'].append(mu_loss)
 
         # The same thing as above implemented manually to be as close to
@@ -271,11 +261,11 @@ class ClassicalDDPG:
                               (1 - self.tau_critic) * target_weights)
         self.target_critic_net_1.set_weights(new_target_weights)
 
-        target_weights = np.array(self.target_critic_net_2.get_weights())
-        main_weights = np.array(self.main_critic_net_2.get_weights())
-        new_target_weights = (self.tau_critic * main_weights +
-                              (1 - self.tau_critic) * target_weights)
-        self.target_critic_net_2.set_weights(new_target_weights)
+        # target_weights = np.array(self.target_critic_net_2.get_weights())
+        # main_weights = np.array(self.main_critic_net_2.get_weights())
+        # new_target_weights = (self.tau_critic * main_weights +
+        #                       (1 - self.tau_critic) * target_weights)
+        # self.target_critic_net_2.set_weights(new_target_weights)
 
         # ACTOR
         target_weights = np.array(self.target_actor_net.get_weights())

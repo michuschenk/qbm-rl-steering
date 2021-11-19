@@ -8,6 +8,11 @@ from qbm_rl_steering.core.run_utils import (evaluator,
 
 import numpy as np
 
+nst = 0
+for k in df.keys():
+  if 'step' in k:
+    nst += 1
+  
 
 params = {
   'quantum_ddpg': False,
@@ -42,8 +47,9 @@ env = RmsSteeringEnv(
 n_actions = env.action_space.shape[-1]
 action_noise = NormalActionNoise(mean=np.zeros(n_actions),
                                  sigma=0.1*np.ones(n_actions))
-agent = DDPG('MlpPolicy', env, action_noise=action_noise, verbose=1)
-agent.learn(total_timesteps=600, log_interval=10)
+agent = DDPG('MlpPolicy', env, action_noise=action_noise, verbose=1,
+             batch_size=params['trainer/batch_size'])
+agent.learn(total_timesteps=200, log_interval=10)
 
 env = RmsSteeringEnv(
   n_dims=params['env/n_dims'],
@@ -51,4 +57,6 @@ env = RmsSteeringEnv(
   required_steps_above_reward_threshold=params['env/required_steps_above_reward_threshold'])
 eval_log_scan = evaluator(env, agent, n_episodes=100, reward_scan=True)
 plot_evaluation_log(env, params['env/max_steps_per_episode'],
-                eval_log_scan, save_path='./', type='scan')
+                eval_log_scan, save_path=None, type='scan')
+
+
