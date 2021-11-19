@@ -360,7 +360,7 @@ class QuantumDDPG:
         self.losses_log = {'Q': [], 'Mu': []}
         self.q_log = {'before': [], 'after': []}
 
-    def get_proposed_action(self, state, noise_scale):
+    def get_proposed_action(self, state):
         """ Use main actor network to obtain proposed action for en input
         state. """
         return self.main_actor_net.predict(state.reshape(1, -1))[0]

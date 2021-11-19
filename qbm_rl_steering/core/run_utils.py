@@ -35,6 +35,9 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
     early_stopping_counter = 0
     k_moving_avg = 30
 
+    max_act = -np.inf
+    min_act = np.inf
+
     for episode in range(n_episodes):
         if early_stopping_counter >= n_episodes_early_stopping:
             break
@@ -72,6 +75,10 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
                 n_random_steps_episode += 1
             else:
                 action = agent.get_proposed_action(state)
+
+            max_act = max(np.max(action), max_act)
+            min_act = min(np.min(action), min_act)
+
             # NEW: ADD ACTION NOISE IN ANY CASE, DURING RANDOM EXPLORATION AND WHEN SAMPLING
             # FOLLOWING POLICY.
             action += action_noise * np.random.randn(agent.n_dims_action_space)
@@ -142,6 +149,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
                 break
 
             state = next_state
+            print('max_act', max_act)
+            print('min_act', min_act)
 
     return episode_log
 
