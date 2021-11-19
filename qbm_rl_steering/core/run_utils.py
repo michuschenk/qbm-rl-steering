@@ -55,8 +55,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
         else:
             agent.main_critic_net_1.n_meas_for_average = n_anneals
             agent.target_critic_net_1.n_meas_for_average = n_anneals
-            agent.main_critic_net_2.n_meas_for_average = n_anneals
-            agent.target_critic_net_2.n_meas_for_average = n_anneals
+            # agent.main_critic_net_2.n_meas_for_average = n_anneals
+            # agent.target_critic_net_2.n_meas_for_average = n_anneals
 
         # Episode loop
         epsilon = epsilon_greedy_schedule(episode).numpy()

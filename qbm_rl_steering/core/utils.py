@@ -5,7 +5,6 @@ import tensorflow as tf
 from tensorflow.keras.initializers import glorot_normal
 
 KERNEL_INITIALIZER = glorot_normal()
-
 BUFFER_UNBALANCE_GAP = 0.5
 
 
