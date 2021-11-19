@@ -30,7 +30,7 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-    def sample(self, batch_size=32, unbalance_p=True):
+    def sample(self, batch_size=32, unbalance_p=False):
         # idxs = np.random.randint(0, self.size, size=batch_size)
         # temp_dict = dict(s=self.obs1_buf[idxs],
         #                  s2=self.obs2_buf[idxs],
@@ -82,15 +82,15 @@ def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int)
 
     # State as input
     state_input = tf.keras.layers.Input(shape=n_dims_state_space, dtype=tf.float32)
-    state_out = tf.keras.layers.Dense(600, activation=tf.nn.leaky_relu,
+    state_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
                                       kernel_initializer=KERNEL_INITIALIZER)(state_input)
-    state_out = tf.keras.layers.BatchNormalization()(state_out)
-    state_out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
-                                      kernel_initializer=KERNEL_INITIALIZER)(state_out)
+    # state_out = tf.keras.layers.BatchNormalization()(state_out)
+    # state_out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
+    #                                   kernel_initializer=KERNEL_INITIALIZER)(state_out)
 
     # Action as input
     action_input = tf.keras.layers.Input(shape=n_dims_action_space, dtype=tf.float32)
-    action_out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
+    action_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
                                        kernel_initializer=KERNEL_INITIALIZER)(
         action_input / 1.)
 
@@ -98,7 +98,7 @@ def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int)
     added = tf.keras.layers.Add()([state_out, action_out])
 
     added = tf.keras.layers.BatchNormalization()(added)
-    outs = tf.keras.layers.Dense(150, activation=tf.nn.leaky_relu,
+    outs = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
                                  kernel_initializer=KERNEL_INITIALIZER)(added)
     outs = tf.keras.layers.BatchNormalization()(outs)
     outputs = tf.keras.layers.Dense(1, kernel_initializer=last_init)(outs)
@@ -125,7 +125,7 @@ def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int):
     # return tf.keras.Model(input_state, x)
     last_init = tf.random_normal_initializer(stddev=0.0005)
     inputs = tf.keras.layers.Input(shape=(n_dims_state_space,), dtype=tf.float32)
-    out = tf.keras.layers.Dense(600, activation=tf.nn.leaky_relu,
+    out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
                                 kernel_initializer=KERNEL_INITIALIZER)(inputs)
     out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
                                 kernel_initializer=KERNEL_INITIALIZER)(out)
