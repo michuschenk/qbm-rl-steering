@@ -97,8 +97,8 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             # Fill replay buffer
             terminal = done
             # NEW: FOR SB3, DON'T CARE IF ENDED WITH SUCCESS OR DUE TO MAX STEPS. DONE=TRUE IN BOTH CASES.
-            #if n_steps_episode == max_steps_per_episode:
-            #    terminal = False
+            if n_steps_episode == max_steps_per_episode:
+                terminal = False
             agent.replay_buffer.push(state, action, reward, next_state,
                                      terminal)
 
