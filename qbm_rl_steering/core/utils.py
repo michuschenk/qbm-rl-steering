@@ -2,7 +2,8 @@ import random
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.initializers import glorot_normal
+from tensorflow.keras.initializers import glorot_normal, random_normal
+from tensorflow.keras.layers import Input, Dense, concatenate
 
 KERNEL_INITIALIZER = glorot_normal()
 BUFFER_UNBALANCE_GAP = 0.5
@@ -74,75 +75,75 @@ class ReplayBuffer:
 
 
 # Generator functions for classical actor and critic models
-def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int):
+def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int, hidden_layers):
     """ Initializes DDPG critic network represented by classical neural
     network.
     :param n_dims_state_space: number of dimensions of state space.
     :param n_dims_action_space: number of dimensions of action space.
     :return: keras dense feed-forward network model. """
-    # input_state = Input(shape=n_dims_state_space)
-    # input_action = Input(shape=n_dims_action_space)
-    # x = input_state
-    # for i, j in enumerate(hidden_layers[:-1]):
-    #     if i == 1:
-    #         x = concatenate([x, input_action], axis=-1)
-    #     x = Dense(j, activation=tf.nn.leaky_relu)(x)
-    # x = Dense(hidden_layers[-1])(x)
+    input_state = Input(shape=n_dims_state_space)
+    input_action = Input(shape=n_dims_action_space)
+    x = input_state
+    for i, j in enumerate(hidden_layers[:-1]):
+        if i == 1:
+            x = concatenate([x, input_action], axis=-1)
+        x = Dense(j, activation=tf.nn.leaky_relu)(x)
+    x = Dense(hidden_layers[-1])(x)
+
+    return tf.keras.Model([input_state, input_action], x)
+
+    # last_init = tf.random_normal_initializer(stddev=0.00005)
     #
-    # return tf.keras.Model([input_state, input_action], x)
-
-    last_init = tf.random_normal_initializer(stddev=0.00005)
-
-    # State as input
-    state_input = tf.keras.layers.Input(shape=n_dims_state_space, dtype=tf.float32)
-    state_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
-                                      kernel_initializer=KERNEL_INITIALIZER)(state_input)
-    # state_out = tf.keras.layers.BatchNormalization()(state_out)
-    # state_out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
-    #                                   kernel_initializer=KERNEL_INITIALIZER)(state_out)
-
-    # Action as input
-    action_input = tf.keras.layers.Input(shape=n_dims_action_space, dtype=tf.float32)
-    action_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
-                                       kernel_initializer=KERNEL_INITIALIZER)(
-        action_input / 1.)
-
-    # Both are passed through separate layer before concatenating
-    added = tf.keras.layers.Add()([state_out, action_out])
-
-    added = tf.keras.layers.BatchNormalization()(added)
-    outs = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
-                                 kernel_initializer=KERNEL_INITIALIZER)(added)
-    outs = tf.keras.layers.BatchNormalization()(outs)
-    outputs = tf.keras.layers.Dense(1, kernel_initializer=last_init)(outs)
-
-    # Outputs single value for give state-action
-    model = tf.keras.Model([state_input, action_input], outputs)
-
-    return model
+    # # State as input
+    # state_input = tf.keras.layers.Input(shape=n_dims_state_space, dtype=tf.float32)
+    # state_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
+    #                                   kernel_initializer=KERNEL_INITIALIZER)(state_input)
+    # # state_out = tf.keras.layers.BatchNormalization()(state_out)
+    # # state_out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
+    # #                                   kernel_initializer=KERNEL_INITIALIZER)(state_out)
+    #
+    # # Action as input
+    # action_input = tf.keras.layers.Input(shape=n_dims_action_space, dtype=tf.float32)
+    # action_out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
+    #                                    kernel_initializer=KERNEL_INITIALIZER)(
+    #     action_input / 1.)
+    #
+    # # Both are passed through separate layer before concatenating
+    # added = tf.keras.layers.Add()([state_out, action_out])
+    #
+    # added = tf.keras.layers.BatchNormalization()(added)
+    # outs = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
+    #                              kernel_initializer=KERNEL_INITIALIZER)(added)
+    # outs = tf.keras.layers.BatchNormalization()(outs)
+    # outputs = tf.keras.layers.Dense(1, kernel_initializer=last_init)(outs)
+    #
+    # # Outputs single value for give state-action
+    # model = tf.keras.Model([state_input, action_input], outputs)
+    #
+    # return model
 
 
-def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int):
+def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int, hidden_layers):
     """ Initializes DDPG actor network represented by classical neural
     network.
     :param n_dims_state_space: number of dimensions of state space.
     :param n_dims_action_space: number of dimensions of action space.
     :return: keras dense feed-forward network model. """
-    # input_state = Input(shape=n_dims_state_space)
-    # x = input_state
-    # for i in hidden_layers:
-    #     x = Dense(i, activation=tf.nn.leaky_relu,
-    #               kernel_initializer=glorot_normal())(x)
-    # x = Dense(n_dims_action_space, activation='tanh',
-    #           kernel_initializer=random_normal_initializer(stddev=0.0005))(x)
-    # return tf.keras.Model(input_state, x)
-    last_init = tf.random_normal_initializer(stddev=0.0005)
-    inputs = tf.keras.layers.Input(shape=(n_dims_state_space,), dtype=tf.float32)
-    out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
-                                kernel_initializer=KERNEL_INITIALIZER)(inputs)
-    out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
-                                kernel_initializer=KERNEL_INITIALIZER)(out)
-    outputs = tf.keras.layers.Dense(n_dims_action_space, activation="tanh",
-                                    kernel_initializer=last_init)(out) * 1.
-    model = tf.keras.Model(inputs, outputs)
-    return model
+    input_state = Input(shape=n_dims_state_space)
+    x = input_state
+    for i in hidden_layers:
+        x = Dense(i, activation=tf.nn.leaky_relu,
+                  kernel_initializer=glorot_normal())(x)
+    x = Dense(n_dims_action_space, activation='tanh',
+              kernel_initializer=random_normal(stddev=0.0005))(x)
+    return tf.keras.Model(input_state, x)
+    # last_init = tf.random_normal_initializer(stddev=0.0005)
+    # inputs = tf.keras.layers.Input(shape=(n_dims_state_space,), dtype=tf.float32)
+    # out = tf.keras.layers.Dense(400, activation=tf.nn.leaky_relu,
+    #                             kernel_initializer=KERNEL_INITIALIZER)(inputs)
+    # out = tf.keras.layers.Dense(300, activation=tf.nn.leaky_relu,
+    #                             kernel_initializer=KERNEL_INITIALIZER)(out)
+    # outputs = tf.keras.layers.Dense(n_dims_action_space, activation="tanh",
+    #                                 kernel_initializer=last_init)(out) * 1.
+    # model = tf.keras.Model(inputs, outputs)
+    # return model

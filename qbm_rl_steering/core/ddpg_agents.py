@@ -51,22 +51,22 @@ class ClassicalDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        # actor_hidden_layers = [48, 32]
+        actor_hidden_layers = [48, 32]
         # actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
-            self.n_dims_state_space, self.n_dims_action_space)
+            self.n_dims_state_space, self.n_dims_action_space, actor_hidden_layers)
         self.target_actor_net = generate_classical_actor(
-            self.n_dims_state_space, self.n_dims_action_space)
+            self.n_dims_state_space, self.n_dims_action_space, actor_hidden_layers)
 
         # CRITIC
-        # critic_hidden_layers = [100, 50, 1]
+        critic_hidden_layers = [48, 32, 1]
         # critic_hidden_layers = [400, 300, 1]
         self.main_critic_net_1 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space)
+            self.n_dims_state_space, self.n_dims_action_space, critic_hidden_layers)
         # self.main_critic_net_2 = generate_classical_critic(
         #     self.n_dims_state_space, self.n_dims_action_space)
         self.target_critic_net_1 = generate_classical_critic(
-            self.n_dims_state_space, self.n_dims_action_space)
+            self.n_dims_state_space, self.n_dims_action_space, critic_hidden_layers)
         # self.target_critic_net_2 = generate_classical_critic(
         #     self.n_dims_state_space, self.n_dims_action_space)
 
