@@ -62,7 +62,7 @@ def run_full(params, process_id=None):
         agent = ClassicalDDPG(state_space=env.observation_space,
                               action_space=env.action_space,
                               learning_rate_critic=params['lr/init'],
-                              learning_rate_actor=params['lr/init'],
+                              learning_rate_actor=params['lr/init']/10.,
                               grad_clip_actor=np.inf, grad_clip_critic=np.inf,
                               gamma=params['agent/gamma'],
                               tau_critic=params['agent/tau'],
@@ -259,16 +259,16 @@ if __name__ == '__main__':
         'quantum_ddpg': False,
         'n_episodes': 2000,
         'env/n_dims': 6,
-        'env/max_steps_per_episode': 25,
+        'env/max_steps_per_episode': 20,
         'env/required_steps_above_reward_threshold': 1,
         'trainer/batch_size': 100,
-        'trainer/n_exploration_steps': 100,
+        'trainer/n_exploration_steps': 70,
         'trainer/n_episodes_early_stopping': 1000,
         'agent/gamma': 0.99,
         'agent/tau': 0.005,
         # 'agent/tau_actor': 0.005,
-        'lr/init': 2e-3,
-        'lr/final': 2e-3,
+        'lr/init': 1e-3,
+        'lr/final': 1e-3,
         'lr/decay_factor': 1.,
         #'lr_actor/init': 1e-4,
         #'lr_actor/decay_factor': 1.,
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     # scan_param_values = np.array([16, 32, 48, 64, 128, 256])
 
     scan_param_name = 'n_episodes'
-    scan_param_values = np.array([50, 100, 200, 400, 600])
+    scan_param_values = np.array([200])
 
     #scan_param_name = 'agent/tau'
     #scan_param_values = np.array([0.0001, 0.0003, 0.0005, 0.0008, 0.001, 0.002])
