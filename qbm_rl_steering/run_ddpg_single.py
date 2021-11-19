@@ -34,31 +34,31 @@ params = {
     'anneals/final': 2,
 }
 
-# params = {
-#   'quantum_ddpg': False,  # False
-#   'n_steps': 1000,
-#   'env/n_dims': 6,
-#   'env/max_steps_per_episode': 20,
-#   'env/required_steps_above_reward_threshold': 1,
-#   'trainer/batch_size': 100,  # 128,
-#   'trainer/n_exploration_steps': 100,  # 200,
-#   'trainer/n_episodes_early_stopping': 20,
-#   'agent/gamma': 0.99,
-#   'agent/tau_critic': 0.001,  # 0.0008,
-#   'agent/tau_actor': 0.001,  # 0.0008,
-#   'lr_critic/init': 1e-3,
-#   'lr_critic/decay_factor': 1.,
-#   'lr_actor/init': 1e-3,
-#   'lr_actor/decay_factor': 1.,
-#   'lr/final': 1e-5,
-#   'action_noise/init': 0.2,
-#   'action_noise/final': 0.,
-#   'epsilon_greedy/init': 0.,
-#   'epsilon_greedy/final': 0.,
-#   'anneals/n_pieces': 2,
-#   'anneals/init': 1,
-#   'anneals/final': 2,
-# }
+params = {
+  'quantum_ddpg': False,  # False
+  'n_steps': 1000,
+  'env/n_dims': 6,
+  'env/max_steps_per_episode': 20,
+  'env/required_steps_above_reward_threshold': 1,
+  'trainer/batch_size': 100,  # 128,
+  'trainer/n_exploration_steps': 100,  # 200,
+  'trainer/n_episodes_early_stopping': 20,
+  'agent/gamma': 0.99,
+  'agent/tau_critic': 0.001,  # 0.0008,
+  'agent/tau_actor': 0.001,  # 0.0008,
+  'lr_critic/init': 1e-3,
+  'lr_critic/decay_factor': 1.,
+  'lr_actor/init': 1e-3,
+  'lr_actor/decay_factor': 1.,
+  'lr/final': 1e-5,
+  'action_noise/init': 0.2,
+  'action_noise/final': 0.,
+  'epsilon_greedy/init': 0.,
+  'epsilon_greedy/final': 0.,
+  'anneals/n_pieces': 2,
+  'anneals/init': 1,
+  'anneals/final': 2,
+}
 
 
 process_id = None
@@ -82,7 +82,7 @@ lr_schedule_actor = PolynomialDecay(params['lr_actor/init'],
                                     end_learning_rate=params['lr/final'])
 
 if params['quantum_ddpg']:
-    agentMy = QuantumDDPG(env, state_space=env.observation_space,
+    agentMy = QuantumDDPG(state_space=env.observation_space,
                           action_space=env.action_space,
                           learning_rate_schedule_critic=lr_schedule_critic,
                           learning_rate_schedule_actor=lr_schedule_actor,
@@ -92,7 +92,7 @@ if params['quantum_ddpg']:
                           tau_actor=params['agent/tau_actor'],
                           )
 else:
-    agentMy = ClassicalDDPG(env, state_space=env.observation_space,
+    agentMy = ClassicalDDPG(state_space=env.observation_space,
                             action_space=env.action_space,
                             learning_rate_critic=params['lr_critic/init'],
                             learning_rate_actor=params['lr_actor/init'],
