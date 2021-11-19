@@ -20,8 +20,6 @@ class ReplayBuffer:
         self.done_buf = np.zeros([size], dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-        self.p_indices = [BUFFER_UNBALANCE_GAP / 2]
-
     def push(self, obs, act, rew, next_obs, done):
         self.obs1_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
@@ -31,37 +29,37 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-    def sample(self, batch_size, env, unbalance_p=False):
-        # idxs = np.random.randint(0, self.size, size=batch_size)
-        # temp_dict = dict(s=self.obs1_buf[idxs],
-        #                  s2=self.obs2_buf[idxs],
-        #                  a=self.acts_buf[idxs],
-        #                  r=self.rews_buf[idxs],
-        #                  d=self.done_buf[idxs])
-        # return (temp_dict['s'], temp_dict['a'], temp_dict['r'].reshape(-1, 1),
-        #         temp_dict['s2'], temp_dict['d'])
-
-        p_indices = None
-        if random.random() < unbalance_p:
-            self.p_indices.extend((np.arange(self.size - len(self.p_indices)) + 1) * BUFFER_UNBALANCE_GAP +
-                                  self.p_indices[-1])
-            p_indices = self.p_indices / np.sum(self.p_indices)
-
-        chosen_indices = np.random.choice(self.size,
-                                          size=min(batch_size, self.size),
-                                          replace=False,
-                                          p=p_indices)
-
-        obs1 = self._normalize_obs(self.obs1_buf[chosen_indices], env)
-        obs2 = self._normalize_obs(self.obs2_buf[chosen_indices], env)
-        rews = self._normalize_rewards(self.rews_buf[chosen_indices], env)
-        temp_dict = dict(s=obs1,
-                         s2=obs2,
-                         a=self.acts_buf[chosen_indices],
-                         r=rews,
-                         d=self.done_buf[chosen_indices])
+    def sample(self, batch_size):
+        idxs = np.random.randint(0, self.size, size=batch_size)
+        temp_dict = dict(s=self.obs1_buf[idxs],
+                         s2=self.obs2_buf[idxs],
+                         a=self.acts_buf[idxs],
+                         r=self.rews_buf[idxs],
+                         d=self.done_buf[idxs])
         return (temp_dict['s'], temp_dict['a'], temp_dict['r'].reshape(-1, 1),
                 temp_dict['s2'], temp_dict['d'])
+
+        # p_indices = None
+        # if random.random() < unbalance_p:
+        #     self.p_indices.extend((np.arange(self.size - len(self.p_indices)) + 1) * BUFFER_UNBALANCE_GAP +
+        #                           self.p_indices[-1])
+        #     p_indices = self.p_indices / np.sum(self.p_indices)
+        #
+        # chosen_indices = np.random.choice(self.size,
+        #                                   size=min(batch_size, self.size),
+        #                                   replace=False,
+        #                                   p=p_indices)
+        #
+        # obs1 = self._normalize_obs(self.obs1_buf[chosen_indices], env)
+        # obs2 = self._normalize_obs(self.obs2_buf[chosen_indices], env)
+        # rews = self._normalize_rewards(self.rews_buf[chosen_indices], env)
+        # temp_dict = dict(s=obs1,
+        #                  s2=obs2,
+        #                  a=self.acts_buf[chosen_indices],
+        #                  r=rews,
+        #                  d=self.done_buf[chosen_indices])
+        # return (temp_dict['s'], temp_dict['a'], temp_dict['r'].reshape(-1, 1),
+        #         temp_dict['s2'], temp_dict['d'])
 
     def _normalize_obs(self, obs, env):
         if env is not None:
@@ -83,12 +81,17 @@ def generate_classical_critic(n_dims_state_space: int, n_dims_action_space: int,
     :return: keras dense feed-forward network model. """
     input_state = Input(shape=n_dims_state_space)
     input_action = Input(shape=n_dims_action_space)
-    x = input_state
+    x = concatenate([input_state, input_action], axis=-1)
     for i, j in enumerate(hidden_layers[:-1]):
-        if i == 1:
-            x = concatenate([x, input_action], axis=-1)
-        x = Dense(j, activation=tf.nn.leaky_relu)(x)
-    x = Dense(hidden_layers[-1])(x)
+        x = Dense(j, activation=tf.keras.activations.relu)(x)
+    x = Dense(hidden_layers[-1], activation=tf.keras.activations.linear)(x)
+
+    # x = input_state
+    # for i, j in enumerate(hidden_layers[:-1]):
+    #     if i == 1:
+    #         x = concatenate([x, input_action], axis=-1)
+    #     x = Dense(j, activation=tf.nn.relu)(x)
+    # x = Dense(hidden_layers[-1])(x)
 
     return tf.keras.Model([input_state, input_action], x)
 
@@ -132,10 +135,8 @@ def generate_classical_actor(n_dims_state_space: int, n_dims_action_space: int, 
     input_state = Input(shape=n_dims_state_space)
     x = input_state
     for i in hidden_layers:
-        x = Dense(i, activation=tf.nn.leaky_relu,
-                  kernel_initializer=glorot_normal())(x)
-    x = Dense(n_dims_action_space, activation='tanh',
-              kernel_initializer=random_normal(stddev=0.0005))(x)
+        x = Dense(i, activation=tf.nn.relu)(x)
+    x = Dense(n_dims_action_space, activation='tanh')(x)
     return tf.keras.Model(input_state, x)
     # last_init = tf.random_normal_initializer(stddev=0.0005)
     # inputs = tf.keras.layers.Input(shape=(n_dims_state_space,), dtype=tf.float32)

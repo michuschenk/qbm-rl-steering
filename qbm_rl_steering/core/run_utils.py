@@ -6,7 +6,7 @@ import tqdm
 from qbm_rl_steering.core.ddpg_agents import QuantumDDPG
 
 
-def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
+def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
             action_noise_schedule, epsilon_greedy_schedule, n_anneals_schedule,
             n_exploration_steps=30, n_episodes_early_stopping=20):
     """ Convenience function to run training with DDPG.
@@ -40,9 +40,11 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
     max_state = -np.inf
     min_state = np.inf
 
-    for episode in range(n_episodes):
-        if early_stopping_counter >= n_episodes_early_stopping:
-            break
+    episode = 0
+    #for episode in range(n_episodes):
+    while n_total_steps_training < n_steps:
+        # if early_stopping_counter >= n_episodes_early_stopping:
+        #     break
 
         n_random_steps_episode = 0
         n_steps_episode = 0
@@ -53,7 +55,7 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             env.calculate_state(env.kick_angles)))
 
         # Apply n_anneals_schedule
-        n_anneals = int(n_anneals_schedule(episode).numpy())
+        n_anneals = int(n_anneals_schedule(n_total_steps_training).numpy())
         if isinstance(agent, QuantumDDPG):
             agent.main_critic_net.n_meas_for_average = n_anneals
             agent.target_critic_net.n_meas_for_average = n_anneals
@@ -64,10 +66,10 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
             # agent.target_critic_net_2.n_meas_for_average = n_anneals
 
         # Episode loop
-        epsilon = epsilon_greedy_schedule(episode).numpy()
+        epsilon = epsilon_greedy_schedule(n_total_steps_training).numpy()
 
         # Action noise decay
-        action_noise = action_noise_schedule(episode).numpy()
+        action_noise = action_noise_schedule(n_total_steps_training).numpy()
 
         for _ in range(max_steps_per_episode):
             eps_sample = np.random.uniform(0, 1, 1)
@@ -96,7 +98,6 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
 
             # Fill replay buffer
             terminal = done
-            # NEW: FOR SB3, DON'T CARE IF ENDED WITH SUCCESS OR DUE TO MAX STEPS. DONE=TRUE IN BOTH CASES.
             if n_steps_episode == max_steps_per_episode:
                 terminal = False
             agent.replay_buffer.push(state, action, reward, next_state,
@@ -146,18 +147,17 @@ def trainer(env, agent, n_episodes, max_steps_per_episode, batch_size,
                     f"{np.round(moving_average_n_steps, 1)}"
                 )
 
-                # TRAINING ON RANDOM BATCHES FROM REPLAY BUFFER
-                # (for n_steps_episode)
-                tqdm_desc = f'Learning progress -- Episode {episode}'
-                for __ in tqdm.trange(n_steps_episode, desc=tqdm_desc):
-                    agent.update(batch_size, episode)
+                if n_total_steps_training > n_exploration_steps:
+                    # TRAINING ON RANDOM BATCHES FROM REPLAY BUFFER
+                    # (for n_steps_episode)
+                    tqdm_desc = f'Learning progress -- steps {episode}'
+                    print('GOT ENOUGH STEPS, STARTING GRADIENT UPDATES NOW')
+                    for __ in tqdm.trange(n_steps_episode, desc=tqdm_desc):
+                        agent.update(batch_size, n_total_steps_training)
                 break
 
             state = next_state
-            print('max_act', max_act)
-            print('min_act', min_act)
-            print('max_state', max_state)
-            print('min_state', min_state)
+            episode += 1
 
     return episode_log
 

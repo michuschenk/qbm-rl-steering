@@ -51,16 +51,16 @@ class ClassicalDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        actor_hidden_layers = [48, 32]
-        # actor_hidden_layers = [400, 300]
+        # actor_hidden_layers = [48, 32]
+        actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space, actor_hidden_layers)
         self.target_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space, actor_hidden_layers)
 
         # CRITIC
-        critic_hidden_layers = [48, 32, 1]
-        # critic_hidden_layers = [400, 300, 1]
+        # critic_hidden_layers = [48, 32, 1]
+        critic_hidden_layers = [400, 300, 1]
         self.main_critic_net_1 = generate_classical_critic(
             self.n_dims_state_space, self.n_dims_action_space, critic_hidden_layers)
         # self.main_critic_net_2 = generate_classical_critic(
@@ -78,9 +78,9 @@ class ClassicalDDPG:
 
         # Optimizers
         self.actor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_actor, amsgrad=True)
+            learning_rate_actor, amsgrad=False, epsilon=1e-8, beta_1=0.9, beta_2=0.999)
         self.critic_optimizer = tf.keras.optimizers.Adam(
-            learning_rate_critic, amsgrad=True)
+            learning_rate_critic, amsgrad=False, epsilon=1e-8, beta_1=0.9, beta_2=0.999)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
@@ -105,7 +105,7 @@ class ClassicalDDPG:
     def update(self, batch_size, *args):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
-        s, a, r, s2, d = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+        s, a, r, s2, d = self.replay_buffer.sample(batch_size)
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)
@@ -139,7 +139,7 @@ class ClassicalDDPG:
     def _get_gradients_critic(self, state, action, reward, next_state, d):
         """ Update the main critic network based on given batch of input
         states. """
-        with tf.GradientTape(persistent=True) as tape:
+        with tf.GradientTape() as tape:
             next_action = self.target_actor_net(next_state)
             # next_action = np.clip(next_action, -1, 1)
 
@@ -165,7 +165,7 @@ class ClassicalDDPG:
             # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
             # q_loss = MSE(q_target, q_vals)
             # q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
-            q_loss_1 = tf.math.reduce_mean(tf.math.abs(q_target - q_vals_1))
+            q_loss_1 = tf.math.reduce_mean((q_target - q_vals_1)**2)
             # q_loss_2 = tf.reduce_mean((q_vals_2 - q_target)**2)
 
         grads_q_1 = tape.gradient(q_loss_1, self.main_critic_net_1.trainable_variables)
@@ -181,7 +181,6 @@ class ClassicalDDPG:
         #     grads_q_2]
 
         # Have created tape as persistent, need to clean up manually
-        del tape
         self.losses_log['Q'].append(q_loss_1)
 
         # Just for logging
@@ -373,10 +372,10 @@ class QuantumDDPG:
         # action += noise_scale * np.random.randn(self.n_dims_action_space)
         # return np.clip(action, -1., 1.)
 
-    def update(self, batch_size, episode_count):
+    def update(self, batch_size, step_count):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
-        s, a, r, s2, d = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+        s, a, r, s2, d = self.replay_buffer.sample(batch_size)
         # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
@@ -389,7 +388,7 @@ class QuantumDDPG:
         # This is to ensure simultaneous update of actor and critic
         # TODO: Is this what we want really?
         grads_actor = self._get_gradients_actor(s, batch_size)
-        self._update_critic(s, a, r, s2, d, episode_count)
+        self._update_critic(s, a, r, s2, d, step_count)
         self.actor_optimizer.apply_gradients(
             zip(grads_actor, self.main_actor_net.trainable_variables))
 
@@ -404,7 +403,7 @@ class QuantumDDPG:
         self._update_target_networks()
 
     def _update_critic(self, state, action, reward, next_state,
-                       done, episode_count):
+                       done, step_count):
         """ Update the main critic network based on given batch of input
         states. """
         next_action = self.target_actor_net(next_state)
@@ -427,7 +426,7 @@ class QuantumDDPG:
                 spin_configs, visible_nodes, q_value,
                 (1. - done[jj]) * target_q_value,
                 reward[jj],
-                learning_rate=self.lr_schedule_critic(episode_count).numpy(),
+                learning_rate=self.lr_schedule_critic(step_count).numpy(),
                 grad_clip=self.grad_clip_critic)
 
     def _get_gradients_actor(self, state, batch_size):
