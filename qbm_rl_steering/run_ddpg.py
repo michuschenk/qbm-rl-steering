@@ -49,17 +49,19 @@ def run_full(params, process_id=None):
     #                                    end_learning_rate=params['lr/final'])
 
     if params['quantum_ddpg']:
-        agent = QuantumDDPG(state_space=env.observation_space,
+        agent = QuantumDDPG(env=env,
+                            state_space=env.observation_space,
                             action_space=env.action_space,
-                            learning_rate_schedule_critic=lr_schedule_critic,
-                            learning_rate_schedule_actor=lr_schedule_actor,
+                            learning_rate_schedule_critic=params['lr/init'],
+                            learning_rate_schedule_actor=params['lr/init'],
                             grad_clip_actor=1e4, grad_clip_critic=1.,
                             gamma=params['agent/gamma'],
                             tau_critic=params['agent/tau'],
                             tau_actor=params['agent/tau']
                             )
     else:
-        agent = ClassicalDDPG(state_space=env.observation_space,
+        agent = ClassicalDDPG(env=env,
+                              state_space=env.observation_space,
                               action_space=env.action_space,
                               learning_rate_critic=params['lr/init'],
                               learning_rate_actor=params['lr/init']/10.,
