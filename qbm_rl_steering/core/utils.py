@@ -1,12 +1,6 @@
-import random
-
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.initializers import glorot_normal, random_normal
 from tensorflow.keras.layers import Input, Dense, concatenate
-
-KERNEL_INITIALIZER = glorot_normal()
-BUFFER_UNBALANCE_GAP = 0.5
 
 
 class ReplayBuffer:
@@ -38,38 +32,6 @@ class ReplayBuffer:
                          d=self.done_buf[idxs])
         return (temp_dict['s'], temp_dict['a'], temp_dict['r'].reshape(-1, 1),
                 temp_dict['s2'], temp_dict['d'])
-
-        # p_indices = None
-        # if random.random() < unbalance_p:
-        #     self.p_indices.extend((np.arange(self.size - len(self.p_indices)) + 1) * BUFFER_UNBALANCE_GAP +
-        #                           self.p_indices[-1])
-        #     p_indices = self.p_indices / np.sum(self.p_indices)
-        #
-        # chosen_indices = np.random.choice(self.size,
-        #                                   size=min(batch_size, self.size),
-        #                                   replace=False,
-        #                                   p=p_indices)
-        #
-        # obs1 = self._normalize_obs(self.obs1_buf[chosen_indices], env)
-        # obs2 = self._normalize_obs(self.obs2_buf[chosen_indices], env)
-        # rews = self._normalize_rewards(self.rews_buf[chosen_indices], env)
-        # temp_dict = dict(s=obs1,
-        #                  s2=obs2,
-        #                  a=self.acts_buf[chosen_indices],
-        #                  r=rews,
-        #                  d=self.done_buf[chosen_indices])
-        # return (temp_dict['s'], temp_dict['a'], temp_dict['r'].reshape(-1, 1),
-        #         temp_dict['s2'], temp_dict['d'])
-
-    def _normalize_obs(self, obs, env):
-        if env is not None:
-            return env.normalize_obs(obs)
-        return obs
-
-    def _normalize_rewards(self, reward, env):
-        if env is not None:
-            return env.normalize_reward(reward).astype(np.float32)
-        return reward
 
 
 # Generator functions for classical actor and critic models

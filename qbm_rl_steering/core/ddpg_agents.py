@@ -11,8 +11,6 @@ from qbm_rl_steering.core.utils import (generate_classical_critic,
 from qbm_rl_steering.core.utils import ReplayBuffer
 from qbm_rl_steering.core.qbm import QFunction
 
-from stable_baselines3.common.vec_env import unwrap_vec_normalize
-
 
 # TODO: implement common base class for classical and quantum ddpg
 # TODO: needs further cleaning: get rid of n_steps_estimate and implement the
@@ -20,7 +18,7 @@ from stable_baselines3.common.vec_env import unwrap_vec_normalize
 
 
 class ClassicalDDPG:
-    def __init__(self, env, state_space, action_space, gamma, tau_critic, tau_actor,
+    def __init__(self, state_space, action_space, gamma, tau_critic, tau_actor,
                  learning_rate_critic, learning_rate_actor, grad_clip_actor,
                  grad_clip_critic):
         """ Implements the classical DDPG agent where both actor and critic
@@ -33,9 +31,6 @@ class ClassicalDDPG:
         :param learning_rate_schedule_critic: learning rate schedule for critic.
         :param learning_rate_schedule_actor: learning rate schedule for actor.
         """
-
-        self._vec_normalize_env = unwrap_vec_normalize(env)
-
         self.step_count = 0
 
         self.n_dims_state_space = len(state_space.high)
@@ -279,7 +274,7 @@ class ClassicalDDPG:
 
 
 class QuantumDDPG:
-    def __init__(self, env, state_space, action_space, gamma, tau_critic,
+    def __init__(self, state_space, action_space, gamma, tau_critic,
                  tau_actor, learning_rate_schedule_critic,
                  learning_rate_schedule_actor, grad_clip_actor=20,
                  grad_clip_critic=1.):
@@ -298,8 +293,6 @@ class QuantumDDPG:
         :param n_steps_estimate: estimated total number of training steps,
         needed for learning rate schedules (would like to get rid of this).
         """
-        self._vec_normalize_env = unwrap_vec_normalize(env)
-
         self.n_dims_state_space = len(state_space.high)
         self.n_dims_action_space = len(action_space.high)
 
@@ -329,8 +322,8 @@ class QuantumDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        # actor_hidden_layers = [512, 200, 128]
-        actor_hidden_layers = [48, 32]
+        # actor_hidden_layers = [48, 32]
+        actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
             actor_hidden_layers)
@@ -351,7 +344,7 @@ class QuantumDDPG:
 
         # Optimizers
         self.actor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=self.lr_schedule_actor)
+            learning_rate_schedule_actor, amsgrad=False, epsilon=1e-8, beta_1=0.9, beta_2=0.999)
 
         # Replay buffer
         self.replay_buffer = ReplayBuffer(
@@ -376,7 +369,6 @@ class QuantumDDPG:
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
-        # s, a, r, s2, d = zip(*self.replay_buffer.get_batch(batch_size, False))
         s = np.asarray(s, dtype=np.float32)
         a = np.asarray(a, dtype=np.float32)
         r = np.asarray(r, dtype=np.float32)
@@ -385,8 +377,6 @@ class QuantumDDPG:
 
         # Invert order since _update_critic will directly apply gradient update
         # while _get_gradients_actor does not.
-        # This is to ensure simultaneous update of actor and critic
-        # TODO: Is this what we want really?
         grads_actor = self._get_gradients_actor(s, batch_size)
         self._update_critic(s, a, r, s2, d, step_count)
         self.actor_optimizer.apply_gradients(

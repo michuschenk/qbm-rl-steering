@@ -12,7 +12,7 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
     """ Convenience function to run training with DDPG.
     :param env: openAI gym environment instance
     :param agent: ddpg instance (ClassicalDDPG or QuantumDDPG)
-    :param n_episodes: max. number of episodes that training will run
+    :param n_steps: max. number of steps that training will run for
     :param max_steps_per_episode: max. number of steps allowed per episode
     :param batch_size: number of samples drawn from experience replay buffer
     at every step.
@@ -41,16 +41,14 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
     min_state = np.inf
 
     episode = 0
-    #for episode in range(n_episodes):
     while n_total_steps_training < n_steps:
-        # if early_stopping_counter >= n_episodes_early_stopping:
-        #     break
+        if early_stopping_counter >= n_episodes_early_stopping:
+            break
 
         n_random_steps_episode = 0
         n_steps_episode = 0
 
         state = env.reset(init_outside_threshold=True)
-        # state = env.reset(init_outside_threshold=False)
         episode_log['initial_rewards'].append(env.calculate_reward(
             env.calculate_state(env.kick_angles)))
 
@@ -146,18 +144,17 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
                     f"MOVING AVG #STEPS: "
                     f"{np.round(moving_average_n_steps, 1)}"
                 )
+                episode += 1
 
                 if n_total_steps_training > n_exploration_steps:
                     # TRAINING ON RANDOM BATCHES FROM REPLAY BUFFER
                     # (for n_steps_episode)
-                    tqdm_desc = f'Learning progress -- steps {episode}'
-                    print('GOT ENOUGH STEPS, STARTING GRADIENT UPDATES NOW')
+                    tqdm_desc = f'Learning progress -- Episode {episode}'
                     for __ in tqdm.trange(n_steps_episode, desc=tqdm_desc):
                         agent.update(batch_size, n_total_steps_training)
                 break
 
             state = next_state
-            episode += 1
 
     return episode_log
 
