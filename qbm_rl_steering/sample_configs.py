@@ -50,7 +50,7 @@ kwargs_q_func = dict(
     small_gamma=params['agent/gamma'],
     n_replicas=1,
     big_gamma=(20., 0.), beta=2,
-    n_annealing_steps=200,
+    n_annealing_steps=2000,  # 200
     n_meas_for_average=1,
     kwargs_qpu={})
 
@@ -120,3 +120,5 @@ sc_all1 = np.atleast_3d(sc_all1)
 sc_all1 = np.rollaxis(sc_all1, 2, 1)
 print('For comparison config with all 1s, Hamiltonian:', get_average_effective_hamiltonian(
     sc_all1, critic.w_hh, critic.w_vh, visible_nodes, big_gamma_final=0., beta_final=2.))
+
+print('total # unique configs', len(spin_config_unique))
