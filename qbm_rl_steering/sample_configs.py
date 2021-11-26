@@ -114,3 +114,9 @@ print('unique_configs', spin_config_unique)
 print('n_occurrences', n_occurrences)
 print('mean_n_occurrences', mean_n_occurrences)
 print('hamiltonians', hamiltonians)
+
+sc_all1 = [1.] * 32
+sc_all1 = np.atleast_3d(sc_all1)
+sc_all1 = np.rollaxis(sc_all1, 2, 1)
+print('For comparison config with all 1s, Hamiltonian:', get_average_effective_hamiltonian(
+    sc_all1, critic.w_hh, critic.w_vh, visible_nodes, big_gamma_final=0., beta_final=2.))
