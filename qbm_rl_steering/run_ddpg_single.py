@@ -10,21 +10,21 @@ matplotlib.use('qt5agg')
 
 params = {
     'quantum_ddpg': True,  # False
-    'n_steps': 200,  # 800
+    'n_steps': 1000,  # 800
     'env/n_dims': 6,
     'env/max_steps_per_episode': 20,
     'env/required_steps_above_reward_threshold': 1,
-    'trainer/batch_size': 16,  # 128,
+    'trainer/batch_size': 32,  # 128,
     'trainer/n_exploration_steps': 100,  # 200,
     'trainer/n_episodes_early_stopping': 30,
     'agent/gamma': 0.99,
     'agent/tau_critic': 0.1,  # 0.001,
     'agent/tau_actor': 0.1,  # 0.001,
-    'lr_critic/init': 1e-3,
+    'lr_critic/init': 2e-3,
     'lr_critic/decay_factor': 1.,
     'lr_actor/init': 1e-3,
     'lr_actor/decay_factor': 1.,
-    'lr/final': 1e-5,
+    'lr/final': 5e-5,
     'action_noise/init': 0.1,
     'action_noise/final': 0.,
     'epsilon_greedy/init': 0.1,
@@ -34,31 +34,31 @@ params = {
     'anneals/final': 2,
 }
 
-params = {
-  'quantum_ddpg': False,  # False
-  'n_steps': 1000,
-  'env/n_dims': 6,
-  'env/max_steps_per_episode': 20,
-  'env/required_steps_above_reward_threshold': 1,
-  'trainer/batch_size': 100,  # 128,
-  'trainer/n_exploration_steps': 100,  # 200,
-  'trainer/n_episodes_early_stopping': 30,
-  'agent/gamma': 0.99,
-  'agent/tau_critic': 0.001,  # 0.0008,
-  'agent/tau_actor': 0.001,  # 0.0008,
-  'lr_critic/init': 1e-3,
-  'lr_critic/decay_factor': 1.,
-  'lr_actor/init': 1e-3,
-  'lr_actor/decay_factor': 1.,
-  'lr/final': 1e-5,
-  'action_noise/init': 0.2,
-  'action_noise/final': 0.,
-  'epsilon_greedy/init': 0.,
-  'epsilon_greedy/final': 0.,
-  'anneals/n_pieces': 2,
-  'anneals/init': 1,
-  'anneals/final': 2,
-}
+# params = {
+#   'quantum_ddpg': False,  # False
+#   'n_steps': 1000,
+#   'env/n_dims': 6,
+#   'env/max_steps_per_episode': 20,
+#   'env/required_steps_above_reward_threshold': 1,
+#   'trainer/batch_size': 100,  # 128,
+#   'trainer/n_exploration_steps': 100,  # 200,
+#   'trainer/n_episodes_early_stopping': 30,
+#   'agent/gamma': 0.99,
+#   'agent/tau_critic': 0.001,  # 0.0008,
+#   'agent/tau_actor': 0.001,  # 0.0008,
+#   'lr_critic/init': 1e-3,
+#   'lr_critic/decay_factor': 1.,
+#   'lr_actor/init': 1e-3,
+#   'lr_actor/decay_factor': 1.,
+#   'lr/final': 1e-5,
+#   'action_noise/init': 0.2,
+#   'action_noise/final': 0.,
+#   'epsilon_greedy/init': 0.,
+#   'epsilon_greedy/final': 0.,
+#   'anneals/n_pieces': 2,
+#   'anneals/init': 1,
+#   'anneals/final': 2,
+# }
 
 
 process_id = None
@@ -156,6 +156,21 @@ episode_log = trainer(
 plot_training_log(env, agentMy, episode_log)  # , save_path=out_path)
 df_train_log = pd.DataFrame(episode_log)
 df_train_log.to_csv(out_path + '/train_log')
+
+# Save agent
+weights = {'main_critic': {'w_vh': agentMy.main_critic_net.w_vh, 'w_hh': agentMy.main_critic_net.w_hh},
+           'target_critic': {'w_vh': agentMy.target_critic_net.w_vh, 'w_hh': agentMy.target_critic_net.w_hh}}
+with open(out_path + '/critic_weights.pkl', 'wb') as fid:
+    pickle.dump(weights, fid)
+
+weights = {'main_actor': agentMy.main_actor_net.get_weights(),
+           'target_actor': agentMy.target_actor_net.get_weights()}
+with open(out_path + '/actor_weights.pkl', 'wb') as fid:
+    pickle.dump(weights, fid)
+
+with open(out_path + '/target_actor.pkl', 'wb') as fid:
+    pickle.dump(agentMy.target_actor_net, fid)
+
 
 # AGENT EVALUATION
 # a) Random state inits

@@ -238,8 +238,8 @@ class QFunction(object):
 
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 4  # 4
-        self.n_columns = 4  # 4
+        self.n_rows = 2  # 4
+        self.n_columns = 2  # 4
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
