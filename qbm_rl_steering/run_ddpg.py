@@ -40,28 +40,26 @@ def run_full(params, process_id=None):
     #                                     params['n_episodes'],
     #                                     params['lr/decay_factor'])
 
-    #lr_schedule_critic = PolynomialDecay(params['lr/init'],
-    #                                     params['n_episodes'],
-    #                                     end_learning_rate=params['lr/final'])
+    lr_schedule_critic = PolynomialDecay(params['lr/init'],
+                                         params['n_steps'],
+                                         end_learning_rate=params['lr/final'])
 
-    #lr_schedule_actor = PolynomialDecay(params['lr/init'],
-    #                                    params['n_episodes'],
-    #                                    end_learning_rate=params['lr/final'])
+    lr_schedule_actor = PolynomialDecay(params['lr/init'],
+                                        params['n_steps'],
+                                        end_learning_rate=params['lr/final'])
 
     if params['quantum_ddpg']:
-        agent = QuantumDDPG(env=env,
-                            state_space=env.observation_space,
+        agent = QuantumDDPG(state_space=env.observation_space,
                             action_space=env.action_space,
-                            learning_rate_schedule_critic=params['lr/init'],
-                            learning_rate_schedule_actor=params['lr/init'],
+                            learning_rate_schedule_critic=lr_schedule_critic,
+                            learning_rate_schedule_actor=lr_schedule_actor,
                             grad_clip_actor=1e4, grad_clip_critic=1.,
                             gamma=params['agent/gamma'],
                             tau_critic=params['agent/tau'],
                             tau_actor=params['agent/tau']
                             )
     else:
-        agent = ClassicalDDPG(env=env,
-                              state_space=env.observation_space,
+        agent = ClassicalDDPG(state_space=env.observation_space,
                               action_space=env.action_space,
                               learning_rate_critic=params['lr/init'],
                               learning_rate_actor=params['lr/init']/10.,
@@ -73,16 +71,16 @@ def run_full(params, process_id=None):
 
     # Action noise schedule
     action_noise_schedule = PolynomialDecay(
-        params['action_noise/init'], params['n_episodes'],
+        params['action_noise/init'], params['n_steps'],
         params['action_noise/final'])
 
     # Epsilon greedy schedule
     epsilon_greedy_schedule = PolynomialDecay(
-        params['epsilon_greedy/init'], params['n_episodes'],
+        params['epsilon_greedy/init'], params['n_steps'],
         params['epsilon_greedy/final'])
 
     # Schedule n_anneals
-    t_transition = [int(x * params['n_episodes']) for x in
+    t_transition = [int(x * params['n_steps']) for x in
                     np.linspace(0, 1., params['anneals/n_pieces'] + 1)][1:-1]
     y_transition = [int(n) for n in np.linspace(params['anneals/init'],
                                                 params['anneals/final'],
@@ -105,7 +103,7 @@ def run_full(params, process_id=None):
     episode_log = trainer(
         env=env, agent=agent, action_noise_schedule=action_noise_schedule,
         epsilon_greedy_schedule=epsilon_greedy_schedule,
-        n_anneals_schedule=n_anneals_schedule, n_episodes=params['n_episodes'],
+        n_anneals_schedule=n_anneals_schedule, n_steps=params['n_steps'],
         max_steps_per_episode=params['env/max_steps_per_episode'],
         batch_size=params['trainer/batch_size'],
         n_exploration_steps=params['trainer/n_exploration_steps'],
@@ -167,7 +165,7 @@ def run_full(params, process_id=None):
 
 def run_worker(scan_param_value, default_params, scan_param_name):
 
-    n_stats = 1
+    n_stats = 4
 
     # Copy default parameters and overwrite the corresponding scan parameter
     params = default_params.copy()
@@ -258,29 +256,29 @@ def plot_scan_results(all_res_fname):
 if __name__ == '__main__':
 
     default_params = {
-        'quantum_ddpg': False,
-        'n_episodes': 2000,
+        'quantum_ddpg': True,
+        'n_steps': 1000,
         'env/n_dims': 6,
         'env/max_steps_per_episode': 20,
         'env/required_steps_above_reward_threshold': 1,
-        'trainer/batch_size': 100,
-        'trainer/n_exploration_steps': 70,
-        'trainer/n_episodes_early_stopping': 1000,
+        'trainer/batch_size': 32,
+        'trainer/n_exploration_steps': 100,
+        'trainer/n_episodes_early_stopping': 30,
         'agent/gamma': 0.99,
-        'agent/tau': 0.005,
+        'agent/tau': 0.15,
         # 'agent/tau_actor': 0.005,
-        'lr/init': 1e-3,
-        'lr/final': 1e-3,
+        'lr/init': 2e-3,
+        'lr/final': 5e-5,
         'lr/decay_factor': 1.,
         #'lr_actor/init': 1e-4,
         #'lr_actor/decay_factor': 1.,
-        'action_noise/init': 0.2,
-        'action_noise/final': 0.2,
-        'epsilon_greedy/init': 0.,
+        'action_noise/init': 0.1,
+        'action_noise/final': 0.,
+        'epsilon_greedy/init': 0.1,
         'epsilon_greedy/final': 0.,
         'anneals/n_pieces': 2,
         'anneals/init': 1,
-        'anneals/final': 2,
+        'anneals/final': 1,
     }
 
     # TODO: implement 2D parameter scans.
@@ -302,8 +300,8 @@ if __name__ == '__main__':
     # scan_param_name = 'trainer/batch_size'
     # scan_param_values = np.array([16, 32, 48, 64, 128, 256])
 
-    scan_param_name = 'n_episodes'
-    scan_param_values = np.array([200])
+    scan_param_name = 'n_steps'
+    scan_param_values = np.array([150, 300, 500, 700, 900, 1500, 2000])
 
     #scan_param_name = 'agent/tau'
     #scan_param_values = np.array([0.0001, 0.0003, 0.0005, 0.0008, 0.001, 0.002])

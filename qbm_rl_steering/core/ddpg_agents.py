@@ -431,7 +431,8 @@ class QuantumDDPG:
         # Apply chain-rule manually here:
         jacobi_mu_wrt_mu_theta = tape2.jacobian(
             a_mu, self.main_actor_net.trainable_variables)
-        grad_q_wrt_a = self.get_action_derivative(state, a_mu, batch_size)
+        # grad_q_wrt_a = self.get_action_derivative(state, a_mu, batch_size)
+        grad_q_wrt_a = self.get_analytical_action_derivative(state, a_mu)
 
         grads_mu = []
         for i in range(len(jacobi_mu_wrt_mu_theta)):
@@ -482,7 +483,7 @@ class QuantumDDPG:
 
     def get_action_derivative(
             self, states: list, actions: list, batch_size: int,
-            epsilon: float = 0.2):
+            epsilon: float = 0.3):
         """ Calculate numerical derivative of QBM Q values with respect to
         action.
         :param states: batch of states from replay buffer.
@@ -521,3 +522,8 @@ class QuantumDDPG:
         grads = np.asarray(grads, dtype=np.float32)
         grads = np.mean(grads, axis=0)
         return grads
+
+    def get_analytical_action_derivative(self, states, actions):
+         _, _, _, _, grads = self.main_critic_net.calculate_q_value_on_batch(
+             states, np.array(actions), calc_derivative=True)
+         return np.asarray(grads, dtype=np.float32)

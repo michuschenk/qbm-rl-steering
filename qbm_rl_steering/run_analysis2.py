@@ -14,14 +14,20 @@ import glob
 def run_analysis(scan_param_name, folder):
 
     try:
-        df_ = pd.read_csv(folder + '/eval_log_random')
-        eval_log_random = df_['rewards'].values
-
+        # df_ = pd.read_csv(folder + '/eval_log_random')
+        # eval_log_random = df_['rewards'].values
+        print('folder', folder)
         df_ = pd.read_csv(folder + '/eval_log_scan')
-        eval_log_scan = df_['rewards'].values
 
+        try:
+            eval_log_scan = df_['rewards'].values
+        except:
+            eval_log_scan = df_['step_1'].values
+            #eval_log_scan = [[v] for v in eval_log_scan]
+            #print(eval_log_scan)
+        #print(eval_log_scan)
         df_train = pd.read_csv(folder + '/train_log')
-    except Exception as err:
+    except FileNotFoundError as err:
         print(f'Problem with folder {folder}')
         print(err)
         return None, None, None, None, None, None, None, None
@@ -31,18 +37,23 @@ def run_analysis(scan_param_name, folder):
     param_value = params[scan_param_name]
 
     # Count number of steps per episode (RANDOM evaluation)
-    n_steps = np.array([(len(json.loads(rew)) - 1) for rew in eval_log_random])
-    init_rewards = np.array([json.loads(rew)[0] for rew in eval_log_random])
-    final_rewards = np.array([json.loads(rew)[-1] for rew in eval_log_random])
-    max_n_steps = np.max(n_steps)
-    avg_n_steps = np.mean(n_steps)
-    res_random_avg = avg_n_steps
-    res_random_max = max_n_steps
+    #n_steps = np.array([(len(json.loads(rew)) - 1) for rew in eval_log_random])
+    #init_rewards = np.array([json.loads(rew)[0] for rew in eval_log_random])
+    #final_rewards = np.array([json.loads(rew)[-1] for rew in eval_log_random])
+    #max_n_steps = np.max(n_steps)
+    #avg_n_steps = np.mean(n_steps)
+    res_random_avg = 0 # avg_n_steps
+    res_random_max = 0 # max_n_steps
 
     # Count number of steps per episode (SCAN evaluation)
-    n_steps = np.array([(len(json.loads(rew)) - 1) for rew in eval_log_scan])
-    init_rewards = np.array([json.loads(rew)[0] for rew in eval_log_scan])
-    final_rewards = np.array([json.loads(rew)[-1] for rew in eval_log_scan])
+    try:
+        n_steps = np.array([(len(json.loads(rew)) - 1) for rew in eval_log_scan])
+        init_rewards = np.array([json.loads(rew)[0] for rew in eval_log_scan])
+        final_rewards = np.array([json.loads(rew)[-1] for rew in eval_log_scan])
+    except:
+        n_steps = 1
+        init_rewards = 0.
+        final_rewards = np.array(eval_log_scan)
     max_n_steps = np.max(n_steps)
     avg_n_steps = np.mean(n_steps)
     res_scan_avg = avg_n_steps
@@ -53,6 +64,9 @@ def run_analysis(scan_param_name, folder):
     total_random_steps = np.sum(df_train['n_random_steps'])
     n_episodes = len(df_train)
 
+    if param_value > 1.7e3:
+        print("DISREGARDING IF MORE THAN 1.7E3 UPDATES")
+        return None, None, None, None, None, None, None, None
     return (param_value, res_random_avg, res_random_max, res_scan_avg, res_scan_max, n_episodes, total_updates, total_random_steps)
 
 
@@ -150,7 +164,7 @@ def plot_scan_results(scan_param_name, results_all):
 if __name__ == '__main__':
 
     folders = glob.glob('runs/indiv/*')
-    scan_param_name = 'n_episodes'
+    scan_param_name = 'n_steps'
     res_random_avg_all = []
     res_scan_avg_all = []
     res_random_max_all = []
