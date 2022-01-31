@@ -332,9 +332,11 @@ def readTwissFromMADX(inputFile, name=''):
 
 def readAWAKEelectronTwiss():
     try:
-        filename_awakeElectron = './selectron_tt43.out'
+        # filename_awakeElectron = './selectron_tt43.out'
+        filename_awakeElectron = './electron_tt43_madx_orig.out'
         twissH, twissV = readTwissFromMADX(filename_awakeElectron)
     except:
+        print('Exception ...')
         filename_awakeElectron = \
             '/home/mischenk/PycharmProjects/qbm-rl-steering/qbm_rl_steering' \
             '/environment/utils/electron_tt43.out'

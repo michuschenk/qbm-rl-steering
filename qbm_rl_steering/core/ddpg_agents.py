@@ -160,7 +160,7 @@ class ClassicalDDPG:
             # q_loss = tf.reduce_mean((q_vals - q_target) ** 2)
             # q_loss = MSE(q_target, q_vals)
             # q_loss = tf.reduce_mean(tf.math.abs(q_vals - q_target))
-            q_loss_1 = tf.math.reduce_mean((q_target - q_vals_1)**2)
+            q_loss_1 = tf.math.reduce_mean((q_target - q_vals_1) ** 2)
             # q_loss_2 = tf.reduce_mean((q_vals_2 - q_target)**2)
 
         grads_q_1 = tape.gradient(q_loss_1, self.main_critic_net_1.trainable_variables)
@@ -311,8 +311,8 @@ class QuantumDDPG:
             action_space=action_space,
             small_gamma=self.gamma,
             n_replicas=1,
-            big_gamma=(20., 0.), beta=2,
-            n_annealing_steps=200,
+            big_gamma=(20., 0.), beta=2.,   # (20., 0.), beta = 2.  ... (best? (500., 2.), beta = 0.1
+            n_annealing_steps=100,  # 200  (best? 10'000)
             n_meas_for_average=1,
             kwargs_qpu={})
 
@@ -322,7 +322,7 @@ class QuantumDDPG:
 
         # Main and target actor network initialization
         # ACTOR
-        # actor_hidden_layers = [48, 32]
+        # actor_hidden_layers = [200, 150]
         actor_hidden_layers = [400, 300]
         self.main_actor_net = generate_classical_actor(
             self.n_dims_state_space, self.n_dims_action_space,
@@ -365,7 +365,7 @@ class QuantumDDPG:
         # action += noise_scale * np.random.randn(self.n_dims_action_space)
         # return np.clip(action, -1., 1.)
 
-    def update(self, batch_size, step_count):
+    def update(self, batch_size, step_count, delay_actor_update=1):
         """ Calculate and apply the updates of the critic and actor
         networks based on batch of samples from experience replay buffer. """
         s, a, r, s2, d = self.replay_buffer.sample(batch_size)
@@ -377,10 +377,13 @@ class QuantumDDPG:
 
         # Invert order since _update_critic will directly apply gradient update
         # while _get_gradients_actor does not.
-        grads_actor = self._get_gradients_actor(s, batch_size)
+        if step_count % delay_actor_update == 0:
+            grads_actor = self._get_gradients_actor(s, batch_size)
         self._update_critic(s, a, r, s2, d, step_count)
-        self.actor_optimizer.apply_gradients(
-            zip(grads_actor, self.main_actor_net.trainable_variables))
+
+        if step_count % delay_actor_update == 0:
+            self.actor_optimizer.apply_gradients(
+                zip(grads_actor, self.main_actor_net.trainable_variables))
 
         # Evaluate Q value for new actor (providing same state, should now
         # give higher Q)
@@ -390,7 +393,9 @@ class QuantumDDPG:
         self.q_log['after'].append(np.mean(q_after))
 
         # Apply Polyak updates
-        self._update_target_networks()
+        self._update_target_critic()
+        if step_count % delay_actor_update == 0:
+            self._update_target_actor()
 
     def _update_critic(self, state, action, reward, next_state,
                        done, step_count):
@@ -427,12 +432,15 @@ class QuantumDDPG:
 
         q, _, _ = self.main_critic_net.calculate_q_value_on_batch(state, a_mu)
         self.q_log['before'].append(np.mean(q))
+        self.losses_log['Q'].append(np.mean(q))
 
         # Apply chain-rule manually here:
         jacobi_mu_wrt_mu_theta = tape2.jacobian(
             a_mu, self.main_actor_net.trainable_variables)
         # grad_q_wrt_a = self.get_action_derivative(state, a_mu, batch_size)
+        # print('numerical: ', grad_q_wrt_a)
         grad_q_wrt_a = self.get_analytical_action_derivative(state, a_mu)
+        # print('analytical: ', grad_q_wrt_a)
 
         grads_mu = []
         for i in range(len(jacobi_mu_wrt_mu_theta)):
@@ -462,7 +470,7 @@ class QuantumDDPG:
 
         return grads_mu
 
-    def _update_target_networks(self):
+    def _update_target_critic(self):
         """ Apply Polyak update to both target networks. """
         # CRITIC
         for k in self.main_critic_net.w_hh.keys():
@@ -474,6 +482,7 @@ class QuantumDDPG:
                     self.tau_critic * self.main_critic_net.w_vh[k] +
                     (1. - self.tau_critic) * self.target_critic_net.w_vh[k])
 
+    def _update_target_actor(self):
         # ACTOR
         target_weights = np.array(self.target_actor_net.get_weights())
         main_weights = np.array(self.main_actor_net.get_weights())
@@ -483,7 +492,7 @@ class QuantumDDPG:
 
     def get_action_derivative(
             self, states: list, actions: list, batch_size: int,
-            epsilon: float = 0.3):
+            epsilon: float = 0.01):  # eps. default 0.3. 0.01 also worked well :) !
         """ Calculate numerical derivative of QBM Q values with respect to
         action.
         :param states: batch of states from replay buffer.
@@ -524,6 +533,6 @@ class QuantumDDPG:
         return grads
 
     def get_analytical_action_derivative(self, states, actions):
-         _, _, _, _, grads = self.main_critic_net.calculate_q_value_on_batch(
-             states, np.array(actions), calc_derivative=True)
-         return np.asarray(grads, dtype=np.float32)
+        _, _, _, _, grads = self.main_critic_net.calculate_q_value_on_batch(
+            states, np.array(actions), calc_derivative=True)
+        return np.asarray(-grads, dtype=np.float32)

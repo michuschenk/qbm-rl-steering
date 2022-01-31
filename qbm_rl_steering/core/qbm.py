@@ -4,6 +4,9 @@ import numpy as np
 from typing import Dict, Tuple, Union
 import gym
 
+from pyqubo import Spin
+import dimod
+
 import matplotlib.pyplot as plt
 
 # SQAOD (simulated quantum annealing)
@@ -20,6 +23,9 @@ except ImportError:
 
 # DWave SimulatedAnnealing
 from qbm_rl_steering.samplers.sa_annealer import SA
+
+# Qiskit samplers
+from qbm_rl_steering.samplers.qaoa_solver import QAOA
 
 
 def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
@@ -43,7 +49,7 @@ def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
 
 
 def create_general_qubo_dict(
-        w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray) -> Dict:
+        w_hh: Dict, w_vh: Dict, visible_nodes: np.ndarray) -> Tuple[Dict, Dict]:
     """
     Creates dictionary of coupling weights of the graph. Corresponds to an
     upper triangular matrix, where self-coupling weights (linear coefficients)
@@ -58,7 +64,8 @@ def create_general_qubo_dict(
     :param visible_nodes: numpy array of inputs, i.e. visible nodes, given by
     the states and action vectors concatenated.
     :return Dictionary of the QUBO upper triangular Q-matrix that describes the
-    quadratic equation to be minimized.
+    quadratic equation to be minimized, as well as the original coefficients in
+    Ising formulation.
     """
     qubo_dict = dict()
 
@@ -75,8 +82,33 @@ def create_general_qubo_dict(
             qubo_dict[(k[1], k[1])] = w * visible_nodes[k[0]]
         else:
             qubo_dict[(k[1], k[1])] += w * visible_nodes[k[0]]
+    ising = qubo_dict.copy()
 
-    return qubo_dict
+    J = {}
+    h = {}
+
+    # TODO: not so robust (nor elegant) maybe
+    keylist = []
+    for i, j in ising.keys():
+        keylist.append(i)
+        keylist.append(j)
+    N = max(keylist) + 1
+    for i in range(N):
+        try:
+            h[i] = ising[(i, i)]
+        except KeyError:
+            h[i] = 0
+
+        for j in range(i + 1, N):
+            try:
+                J[i, j] = ising[(i, j)]
+            except KeyError:
+                J[i, j] = 0
+
+    model = dimod.BinaryQuadraticModel(h, J, 0.0, vartype='SPIN')
+    qubo, offset = model.to_qubo()
+
+    return qubo, ising
 
 
 def get_gradient_average_effective_hamiltonian(
@@ -235,11 +267,10 @@ class QFunction(object):
         initialization of the DWAVE QPU on Amazon Braket.
         """
         # TODO: adapt documentation
-
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 2  # 4
-        self.n_columns = 2  # 4
+        self.n_rows = 3  # 4
+        self.n_columns = 3  # 4
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 
@@ -256,9 +287,11 @@ class QFunction(object):
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
                 device=kwargs_qpu['aws_device'],
                 s3_location=kwargs_qpu['s3_location'])
+        elif sampler_type == 'QAOA':
+            self.sampler = QAOA(n_nodes=n_graph_nodes, simulator='qasm',
+                                n_shots=10, beta_final=beta)
         else:
-            raise ValueError("Annealer_type must be either 'SQA', 'SA', "
-                             "or 'QPU'.")
+            raise ValueError("sampler_type must be either 'SQA', 'SA', 'QPU', or 'QAOA'.")
 
         self.sampler_type = sampler_type
 
@@ -441,7 +474,7 @@ class QFunction(object):
         visible_nodes = get_visible_nodes_array(
             state=state, action=action,
             state_space=self.state_space, action_space=self.action_space)
-        qubo_dict = create_general_qubo_dict(
+        qubo_dict, ising_dict = create_general_qubo_dict(
             self.w_hh, self.w_vh, visible_nodes)
 
         # Run the annealing process (will be either SA, SQA, or QPU)
@@ -458,6 +491,24 @@ class QFunction(object):
         free_energy = get_free_energy(
             spin_configurations, avg_eff_hamiltonian, self.sampler.beta_final)
         q_value = -free_energy
+        # print('QUBO (q_value), proper formulation: ', q_value)
+
+        # JUST FOR DEBUGGING, RUN SAME WITH ISING DICT
+        # Run the annealing process (will be either SA, SQA, or QPU)
+        # spin_configurations = self.sampler.sample(
+        #     qubo_dict=ising_dict,
+        #     n_meas_for_average=self.n_meas_for_average,
+        #     n_steps=self.n_annealing_steps)
+        #
+        # # Based on sampled spin configurations calculate free energy
+        # avg_eff_hamiltonian = get_average_effective_hamiltonian(
+        #     spin_configurations, self.w_hh, self.w_vh, visible_nodes,
+        #     self.sampler.big_gamma_final, self.sampler.beta_final)
+        #
+        # free_energy = get_free_energy(
+        #     spin_configurations, avg_eff_hamiltonian, self.sampler.beta_final)
+        # q_value_debug = -free_energy
+        # print('ISING (q_value), improper form, old version', q_value_debug)
 
         if calc_derivative:
             grads_wrt_v = get_gradient_average_effective_hamiltonian(

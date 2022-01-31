@@ -42,15 +42,20 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
 
     episode = 0
     while n_total_steps_training < n_steps:
+
         if early_stopping_counter >= n_episodes_early_stopping:
             break
 
         n_random_steps_episode = 0
         n_steps_episode = 0
 
+        # state = env.reset(init_outside_threshold=False)
         state = env.reset(init_outside_threshold=True)
-        episode_log['initial_rewards'].append(env.calculate_reward(
-            env.calculate_state(env.kick_angles)))
+        try:
+            episode_log['initial_rewards'].append(env.calculate_reward(
+                env.calculate_state(env.kick_angles)))
+        except AttributeError:
+            episode_log['initial_rewards'].append(env._get_reward(state))
 
         # Apply n_anneals_schedule
         n_anneals = int(n_anneals_schedule(n_total_steps_training).numpy())
@@ -97,6 +102,7 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
             # Fill replay buffer
             terminal = done
             if n_steps_episode == max_steps_per_episode:
+                done = True
                 terminal = False
             agent.replay_buffer.push(state, action, reward, next_state,
                                      terminal)
@@ -107,13 +113,28 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
                 episode_log['final_rewards'].append(reward)
                 episode_log['n_total_steps'].append(n_steps_episode)
                 episode_log['n_random_steps'].append(n_random_steps_episode)
-                episode_log['max_steps_above_reward_threshold'].append(
-                    env.max_steps_above_reward_threshold)
+                # episode_log['max_steps_above_reward_threshold'].append(
+                #     env.max_steps_above_reward_threshold)
 
                 # Early stopping counter
+                # if (((n_steps_episode - n_random_steps_episode) <=
+                #      (env.required_steps_above_reward_threshold + 1)) and
+                #         reward > env.reward_threshold and
+                #         n_steps_episode != n_random_steps_episode):
+                try:
+                    rew_thresh = env.reward_threshold
+                except AttributeError:
+                    rew_thresh = env.threshold
+
+                steps_above_thresh = 0
+                try:
+                    steps_above_thresh = env.required_steps_above_reward_threshold
+                except AttributeError:
+                    pass
+
                 if (((n_steps_episode - n_random_steps_episode) <=
-                     (env.required_steps_above_reward_threshold + 1)) and
-                        reward > env.reward_threshold and
+                     (steps_above_thresh + 2)) and
+                        reward > rew_thresh and
                         n_steps_episode != n_random_steps_episode):
                     early_stopping_counter += 1
                 else:
@@ -128,19 +149,19 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
                 print(f"\nEPISODE: {episode}")
                 print(
                     f"INITIAL REWARD: "
-                    f"{round(episode_log['initial_rewards'][-1], 1)}\n"
+                    f"{round(episode_log['initial_rewards'][-1], 3)}\n"
                     f"FINAL REWARD: "
-                    f"{round(episode_log['final_rewards'][-1], 1)}\n"
+                    f"{round(episode_log['final_rewards'][-1], 3)}\n"
                     f"#STEPS: {n_steps_episode} "
                     f"({n_random_steps_episode} RANDOM)\n"
-                    f"MAX STEPS ABOVE REW. THRESH.: "
-                    f"{env.max_steps_above_reward_threshold}\n"
-                    f"ABORT REASON: "
-                    f"{env.interaction_logger.log_episode[-1][-1]}\n"
+                    # f"MAX STEPS ABOVE REW. THRESH.: "
+                    # f"{env.max_steps_above_reward_threshold}\n"
+                    # f"ABORT REASON: "
+                    # f"{env.interaction_logger.log_episode[-1][-1]}\n"
                     f"EARLY STOPPING COUNT: "
                     f"{early_stopping_counter}/{n_episodes_early_stopping}\n\n"
                     f"MOVING AVG FINAL REWARD: "
-                    f"{np.round(moving_average_final_rewards, 1)}\n"
+                    f"{np.round(moving_average_final_rewards, 3)}\n"
                     f"MOVING AVG #STEPS: "
                     f"{np.round(moving_average_n_steps, 1)}"
                 )
@@ -156,6 +177,7 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
 
             state = next_state
 
+    print('n_total_steps_training', n_total_steps_training)
     return episode_log
 
 
@@ -186,8 +208,15 @@ def evaluator(env, agent, n_episodes, reward_scan=True):
         else:
             state = env.reset(init_outside_threshold=True)
 
-        rewards = [env.calculate_reward(
-            env.calculate_state(env.kick_angles))]
+        rewards = []
+        try:
+            rewards.append(env.calculate_reward(
+                env.calculate_state(env.kick_angles)))
+        except AttributeError:
+            rewards.append(env._get_reward(state))
+
+        # rewards = [env.calculate_reward(
+        #     env.calculate_state(env.kick_angles))]
 
         n_steps_eps = 0
         while True:
@@ -210,12 +239,17 @@ def plot_training_log(env, agent, data, save_path=None):
     """ Plot the log data from the training. """
     # a) Training log
     fig1, axs = plt.subplots(2, 1, sharex=True)
+
+    n_training_episodes = len(data['final_rewards'])
     axs[0].plot(data['n_total_steps'], label='Total steps')
     axs[0].plot(data['n_random_steps'], '--', c='k',
                 label='Random steps')
-    axs[1].plot(data['initial_rewards'], c='r', label='Initial')
+    axs[1].plot(data['initial_rewards'][-n_training_episodes:], c='r', label='Initial')
     axs[1].plot(data['final_rewards'], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    try:
+        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    except AttributeError:
+        axs[1].axhline(env.threshold, color='k', ls='--')
     axs[0].set_ylabel('Number of steps')
     axs[1].set_ylabel('Reward (um)')
     axs[1].set_xlabel('Episodes')
@@ -335,7 +369,11 @@ def plot_evaluation_log(env, max_steps_per_episode, data, save_path=None,
     axs[0].plot([(len(r) - 1) for r in data])
     axs[1].plot([r[0] for r in data], c='r', label='Initial')
     axs[1].plot([r[-1] for r in data], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    try:
+        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    except AttributeError:
+        axs[1].axhline(env.threshold, color='k', ls='--')
+
     axs[0].set_ylabel('Number of steps')
     axs[1].set_ylabel('Reward (um)')
     axs[1].set_xlabel('Episodes')
@@ -361,7 +399,11 @@ def plot_evaluation_log(env, max_steps_per_episode, data, save_path=None,
         axs[1].plot(all_rewards[:, j], c=cmap(j / max_steps), alpha=0.7)
     axs[1].plot([r[0] for r in data], c='r', label='Initial')
     axs[1].plot([r[-1] for r in data], c='g', label='Final')
-    axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    try:
+        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+    except AttributeError:
+        axs[1].axhline(env.threshold, color='k', ls='--')
+
     axs[0].set_ylabel('Number of steps')
     axs[1].set_ylabel('Reward (um)')
     axs[1].set_xlabel('Episodes')

@@ -10,68 +10,72 @@ matplotlib.use('qt5agg')
 
 params = {
     'quantum_ddpg': True,  # False
-    'n_steps': 1000,  # 800
-    'env/n_dims': 6,
-    'env/max_steps_per_episode': 20,
+    'n_steps': 600,  # 800
+    'env/n_dims': 10,
+    'env/max_steps_per_episode': 50,  # 20,
     'env/required_steps_above_reward_threshold': 1,
-    'trainer/batch_size': 32,  # 128,
-    'trainer/n_exploration_steps': 100,  # 200,
-    'trainer/n_episodes_early_stopping': 30,
+    'trainer/batch_size': 32,  # 32
+    'trainer/n_exploration_steps': 150,  # 500,  # 100,
+    'trainer/n_episodes_early_stopping': 20,
     'agent/gamma': 0.99,
-    'agent/tau_critic': 0.1,  # 0.001,
-    'agent/tau_actor': 0.1,  # 0.001,
-    'lr_critic/init': 2e-3,
+    'agent/tau_critic': 0.01,  # 0.001,
+    'agent/tau_actor': 0.01,  # 0.001,
+    'lr_critic/init': 1e-3,  # 1e-3
     'lr_critic/decay_factor': 1.,
     'lr_actor/init': 1e-3,
     'lr_actor/decay_factor': 1.,
-    'lr/final': 5e-5,
-    'action_noise/init': 0.1,
+    'lr/final': 5e-5,  # 5e-5,
+    'action_noise/init': 0.2,  # 0.2,
     'action_noise/final': 0.,
-    'epsilon_greedy/init': 0.1,
+    'epsilon_greedy/init': 0.,  # 0.1
     'epsilon_greedy/final': 0.,
     'anneals/n_pieces': 2,
     'anneals/init': 1,
-    'anneals/final': 2,
+    'anneals/final': 1,
 }
 
-# params = {
-#   'quantum_ddpg': False,  # False
-#   'n_steps': 1000,
-#   'env/n_dims': 6,
-#   'env/max_steps_per_episode': 20,
-#   'env/required_steps_above_reward_threshold': 1,
-#   'trainer/batch_size': 100,  # 128,
-#   'trainer/n_exploration_steps': 100,  # 200,
-#   'trainer/n_episodes_early_stopping': 30,
-#   'agent/gamma': 0.99,
-#   'agent/tau_critic': 0.001,  # 0.0008,
-#   'agent/tau_actor': 0.001,  # 0.0008,
-#   'lr_critic/init': 1e-3,
-#   'lr_critic/decay_factor': 1.,
-#   'lr_actor/init': 1e-3,
-#   'lr_actor/decay_factor': 1.,
-#   'lr/final': 1e-5,
-#   'action_noise/init': 0.2,
-#   'action_noise/final': 0.,
-#   'epsilon_greedy/init': 0.,
-#   'epsilon_greedy/final': 0.,
-#   'anneals/n_pieces': 2,
-#   'anneals/init': 1,
-#   'anneals/final': 2,
-# }
+params = {
+  'quantum_ddpg': False,  # False
+  'n_steps': 1000,
+  'env/n_dims': 10,
+  'env/max_steps_per_episode': 50,  # 20,
+  'env/required_steps_above_reward_threshold': 1,
+  'trainer/batch_size': 32,  # 128,
+  'trainer/n_exploration_steps': 150,  # 200,
+  'trainer/n_episodes_early_stopping': 20,
+  'agent/gamma': 0.99,
+  'agent/tau_critic': 0.001,  # 0.0008,
+  'agent/tau_actor': 0.001,  # 0.0008,
+  'lr_critic/init': 1e-3,
+  'lr_critic/decay_factor': 1.,
+  'lr_actor/init': 1e-3,
+  'lr_actor/decay_factor': 1.,
+  'lr/final': 5e-5,
+  'action_noise/init': 0.2,
+  'action_noise/final': 0.,
+  'epsilon_greedy/init': 0.,
+  'epsilon_greedy/final': 0.,
+  'anneals/n_pieces': 2,
+  'anneals/init': 1,
+  'anneals/final': 2,
+}
 
 
 process_id = None
 from tensorflow.keras.optimizers.schedules import PolynomialDecay, PiecewiseConstantDecay
 from qbm_rl_steering.core.ddpg_agents import ClassicalDDPG, QuantumDDPG
 from qbm_rl_steering.environment.rms_env_nd import RmsSteeringEnv
+from qbm_rl_steering.environment.orig_awake_env import e_trajectory_simENV
+
 from qbm_rl_steering.core.run_utils import trainer, evaluator, plot_training_log, plot_evaluation_log
 import pandas as pd
 
-env = RmsSteeringEnv(
-    n_dims=params['env/n_dims'],
-    max_steps_per_episode=params['env/max_steps_per_episode'],
-    required_steps_above_reward_threshold=params['env/required_steps_above_reward_threshold'])
+# env = RmsSteeringEnv(
+#     n_dims=params['env/n_dims'],
+#     max_steps_per_episode=params['env/max_steps_per_episode'],
+#     required_steps_above_reward_threshold=params['env/required_steps_above_reward_threshold'])
+
+env = e_trajectory_simENV()
 
 # Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
 lr_schedule_critic = PolynomialDecay(params['lr_critic/init'],
@@ -87,6 +91,7 @@ if params['quantum_ddpg']:
                           learning_rate_schedule_critic=lr_schedule_critic,
                           learning_rate_schedule_actor=lr_schedule_actor,
                           grad_clip_actor=1e4, grad_clip_critic=1.,
+                          # grad_clip_actor=np.inf, grad_clip_critic=np.inf,
                           gamma=params['agent/gamma'],
                           tau_critic=params['agent/tau_critic'],
                           tau_actor=params['agent/tau_actor'],
@@ -146,7 +151,10 @@ episode_log = trainer(
 
 # import matplotlib.pyplot as plt
 # plt.figure()
-# plt.plot(agentMy.losses_log['Q'], c='b')
+# plt.plot(agentMy.losses_log['Q'], c='tab:blue')
+# plt.xlabel('# updates')
+# plt.ylabel('Q loss')
+# plt.tight_layout()
 # plt.show()
 #
 # plt.figure()
@@ -154,58 +162,67 @@ episode_log = trainer(
 # plt.show()
 
 plot_training_log(env, agentMy, episode_log)  # , save_path=out_path)
+
+# n_training_episodes = len(episode_log['final_rewards'])
+episode_log_2 = {}
+for k, v in episode_log.items():
+    if len(v) != 0:
+        episode_log_2[k] = v[:]
+episode_log = episode_log_2
+
 df_train_log = pd.DataFrame(episode_log)
 df_train_log.to_csv(out_path + '/train_log')
+#
+# # Save agent
+# weights = {'main_critic': {'w_vh': agentMy.main_critic_net.w_vh, 'w_hh': agentMy.main_critic_net.w_hh},
+#            'target_critic': {'w_vh': agentMy.target_critic_net.w_vh, 'w_hh': agentMy.target_critic_net.w_hh}}
+# with open(out_path + '/critic_weights.pkl', 'wb') as fid:
+#     pickle.dump(weights, fid)
+#
+# weights = {'main_actor': agentMy.main_actor_net.get_weights(),
+#            'target_actor': agentMy.target_actor_net.get_weights()}
+# with open(out_path + '/actor_weights.pkl', 'wb') as fid:
+#     pickle.dump(weights, fid)
 
-# Save agent
-weights = {'main_critic': {'w_vh': agentMy.main_critic_net.w_vh, 'w_hh': agentMy.main_critic_net.w_hh},
-           'target_critic': {'w_vh': agentMy.target_critic_net.w_vh, 'w_hh': agentMy.target_critic_net.w_hh}}
-with open(out_path + '/critic_weights.pkl', 'wb') as fid:
-    pickle.dump(weights, fid)
-
-weights = {'main_actor': agentMy.main_actor_net.get_weights(),
-           'target_actor': agentMy.target_actor_net.get_weights()}
-with open(out_path + '/actor_weights.pkl', 'wb') as fid:
-    pickle.dump(weights, fid)
-
-with open(out_path + '/target_actor.pkl', 'wb') as fid:
-    pickle.dump(agentMy.target_actor_net, fid)
+# with open(out_path + '/target_actor.pkl', 'wb') as fid:
+#     pickle.dump(agentMy.target_actor_net, fid)
 
 
-# AGENT EVALUATION
-# a) Random state inits
-env = RmsSteeringEnv(
-    n_dims=params['env/n_dims'],
-    max_steps_per_episode=params['env/max_steps_per_episode'],
-    required_steps_above_reward_threshold=
-    params['env/required_steps_above_reward_threshold'])
-
-eval_log_random = evaluator(env, agentMy, n_episodes=100, reward_scan=False)
-
-try:
-    df_eval_log = pd.DataFrame({'rewards': eval_log_random})
-except ValueError:
-    print('Issue creating eval df ... probably all evaluations '
-          'used same number of steps')
-
-# n_stp = eval_log_random.shape[1]
-# res_dict = {}
-# for st in range(n_stp):
-#     res_dict[f'step_{st}'] = eval_log_random[:, st]
-# df_eval_log = pd.DataFrame(res_dict)
-
-# df_eval_log.to_csv(out_path + '/eval_log_random')
-plot_evaluation_log(env, params['env/max_steps_per_episode'],
-                    eval_log_random, type='random')  # save_path=out_path
+# # AGENT EVALUATION
+# # a) Random state inits
+# env = RmsSteeringEnv(
+#     n_dims=params['env/n_dims'],
+#     max_steps_per_episode=params['env/max_steps_per_episode'],
+#     required_steps_above_reward_threshold=
+#     params['env/required_steps_above_reward_threshold'])
+#
+# eval_log_random = evaluator(env, agentMy, n_episodes=100, reward_scan=False)
+#
+# try:
+#     df_eval_log = pd.DataFrame({'rewards': eval_log_random})
+# except ValueError:
+#     print('Issue creating eval df ... probably all evaluations '
+#           'used same number of steps')
+#
+# # n_stp = eval_log_random.shape[1]
+# # res_dict = {}
+# # for st in range(n_stp):
+# #     res_dict[f'step_{st}'] = eval_log_random[:, st]
+# # df_eval_log = pd.DataFrame(res_dict)
+#
+# # df_eval_log.to_csv(out_path + '/eval_log_random')
+# plot_evaluation_log(env, params['env/max_steps_per_episode'],
+#                     eval_log_random, type='random')  # save_path=out_path
 
 # b) Systematic state inits
-env = RmsSteeringEnv(
-    n_dims=params['env/n_dims'],
-    max_steps_per_episode=params['env/max_steps_per_episode'],
-    required_steps_above_reward_threshold=
-    params['env/required_steps_above_reward_threshold'])
+# env = RmsSteeringEnv(
+#     n_dims=params['env/n_dims'],
+#     max_steps_per_episode=params['env/max_steps_per_episode'],
+#     required_steps_above_reward_threshold=
+#     params['env/required_steps_above_reward_threshold'])
+env = e_trajectory_simENV()
 
-eval_log_scan = evaluator(env, agentMy, n_episodes=100, reward_scan=True)
+eval_log_scan = evaluator(env, agentMy, n_episodes=100, reward_scan=False)  # reward_scan=True
 
 try:
     df_eval_log = pd.DataFrame({'rewards': eval_log_scan})
@@ -213,15 +230,15 @@ except ValueError:
     print('Issue creating eval df ... probably all evaluations used '
           'same number of steps')
 
-n_stp = eval_log_scan.shape[1]
-res_dict = {}
-for st in range(n_stp):
-    res_dict[f'step_{st}'] = eval_log_scan[:, st]
-df_eval_log = pd.DataFrame(res_dict)
-
-df_eval_log.to_csv(out_path + '/eval_log_scan')
+# n_stp = eval_log_scan.shape[1]
+# res_dict = {}
+# for st in range(n_stp):
+#     res_dict[f'step_{st}'] = eval_log_scan[:, st]
+# df_eval_log = pd.DataFrame(res_dict)
+#
+# df_eval_log.to_csv(out_path + '/eval_log_scan')
 plot_evaluation_log(env, params['env/max_steps_per_episode'],
-                    eval_log_scan, type='scan')  # save_path=out_path)
+                    eval_log_scan, type='random')  # save_path=out_path)
 
 """
 # EVALUATE AGENT FROM MIN. REWARD STATE. TAKES MULTIPLE STEPS

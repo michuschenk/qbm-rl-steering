@@ -10,13 +10,10 @@ import pandas as pd
 
 from gym import spaces
 
-
-
 from qbm_rl_steering.environment.utils import twissReader
 
 
 class e_trajectory_simENV(gym.Env):
-
 
     def __init__(self, **kwargs):
         self.current_action = None
@@ -25,6 +22,7 @@ class e_trajectory_simENV(gym.Env):
         logging.info("e_trajectory_simENV - Version {}".format(self.__version__))
 
         # General variables defining the environment
+        self.reward_scale = 1000  # 1000
         self.MAX_TIME = 50
         self.is_finalized = False
         self.current_episode = -1
@@ -52,11 +50,11 @@ class e_trajectory_simENV(gym.Env):
         self.positionsV = np.zeros(len(self.bpmsV.elements))
         self.settingsV = np.zeros(len(self.correctorsV.elements))
 
-        for ele in self.bpmsH:
-            print('bpmEle', ele.name)
-
-        for ele in self.correctorsH:
-            print('kickEle', ele.name)
+        # for ele in self.bpmsH:
+        #     print('bpmEle', ele.name)
+        #
+        # for ele in self.correctorsH:
+        #     print('kickEle', ele.name)
 
         self.plane = Plane.horizontal
 
@@ -69,8 +67,7 @@ class e_trajectory_simENV(gym.Env):
         low = (-1) * high
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        self.opt_results=[]
-
+        self.opt_results = []
 
         if 'action_scale' in kwargs:
             self.action_scale = kwargs.get('action_scale')
@@ -82,18 +79,13 @@ class e_trajectory_simENV(gym.Env):
             self.state_scale = 100
         self.kicks_0 = np.zeros(len(self.correctorsH.elements))
 
-        self.threshold = -0.0016*self.state_scale #corresponds to 1.6 mm scaled.
-
-
-
+        self.threshold = -0.0016*self.state_scale * self.reward_scale  #corresponds to 1.6 mm scaled.
 
     def step(self, action):
 
         state, reward = self._take_action(action)
 
-
         self.action_episode_memory[self.current_episode].append(action)
-
 
         self.current_steps += 1
         if self.current_steps > self.MAX_TIME:
@@ -123,11 +115,12 @@ class e_trajectory_simENV(gym.Env):
         kicks = action * self.action_scale
 
         state, reward = self._get_state_and_reward(kicks, self.plane,is_optimisation)
+        # print('reward', reward)
 
         return state, reward
 
     def _get_reward(self, trajectory):
-        rms = np.sqrt(np.mean(np.square(trajectory)))
+        rms = self.reward_scale * np.sqrt(np.mean(np.square(trajectory)))
         return (rms * (-1.))
 
     def _get_state_and_reward(self, kicks, plane, is_optimisation):
@@ -157,9 +150,9 @@ class e_trajectory_simENV(gym.Env):
 
         for i, bpm in enumerate(bpms):
             for j, corrector in enumerate(correctors):
-                if (bpm.main_actor_net > corrector.main_actor_net):
+                if (bpm.mu > corrector.mu):
                     rmatrix[i][j] = math.sqrt(bpm.beta * corrector.beta) * math.sin(
-                        (bpm.main_actor_net - corrector.main_actor_net) * 2. * math.pi)
+                        (bpm.mu - corrector.mu) * 2. * math.pi)
                 else:
                     rmatrix[i][j] = 0.0
         return rmatrix
@@ -174,38 +167,49 @@ class e_trajectory_simENV(gym.Env):
 
         self.is_finalized = False
 
-        if (self.plane == Plane.horizontal):
-            self.settingsH = np.random.uniform(-1., 1., len(self.settingsH))
-            self.kicks_0 = self.settingsH * self.action_scale
-        if (self.plane == Plane.vertical):
-            self.settingsV = np.random.uniform(-1.,1.,len(self.settingsV))
-            self.kicks_0 = self.settingsV * self.action_scale
+        while True:
+            if (self.plane == Plane.horizontal):
+                self.settingsH = np.random.uniform(-1., 1., len(self.settingsH))
+                self.kicks_0 = self.settingsH * self.action_scale
+            if (self.plane == Plane.vertical):
+                self.settingsV = np.random.uniform(-1.,1.,len(self.settingsV))
+                self.kicks_0 = self.settingsV * self.action_scale
 
-        if (self.plane == Plane.horizontal):
-            init_positions = np.zeros(len(self.positionsH))  # self.positionsH
-            rmatrix = self.responseH
+            if (self.plane == Plane.horizontal):
+                init_positions = np.zeros(len(self.positionsH))  # self.positionsH
+                rmatrix = self.responseH
 
-        if (self.plane == Plane.vertical):
-            init_positions = np.zeros(len(self.positionsV))  # self.positionsV
-            rmatrix = self.responseV
+            if (self.plane == Plane.vertical):
+                init_positions = np.zeros(len(self.positionsV))  # self.positionsV
+                rmatrix = self.responseV
+
+            state = self._calculate_trajectory(rmatrix, self.kicks_0)
+
+            if (self.plane == Plane.horizontal):
+                self.positionsH = state
+
+            if (self.plane == Plane.vertical):
+                self.positionsV = state
+
+            # Rescale for agent
+            # state = state
+            return_initial_state = np.array(state * self.state_scale)
+            self.initial_conditions.append([return_initial_state])
+            return_value = return_initial_state
+
+            # print('init_outside_threshold', kwargs['init_outside_threshold'])
+            # print('self._get_reward(return_value)', self._get_reward(return_value))
+            # print('self.threshold', self.threshold)
+            if kwargs['init_outside_threshold']:
+                if self._get_reward(return_value) < self.threshold:
+                    break
+            else:
+                break
 
         self.current_episode += 1
         self.current_steps = 0
         self.action_episode_memory.append([])
         self.rewards.append([])
-        state = self._calculate_trajectory(rmatrix, self.kicks_0)
-
-        if (self.plane == Plane.horizontal):
-            self.positionsH = state
-
-        if (self.plane == Plane.vertical):
-            self.positionsV = state
-
-        # Rescale for agent
-        # state = state
-        return_initial_state = np.array(state * self.state_scale)
-        self.initial_conditions.append([return_initial_state])
-        return_value = return_initial_state
 
         return return_value
 

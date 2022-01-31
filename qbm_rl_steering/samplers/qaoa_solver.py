@@ -8,8 +8,8 @@ from qiskit.optimization.algorithms import MinimumEigenOptimizer
 
 
 class QAOA:
-    def __init__(self, n_nodes: int = 16, solver: str = 'QAOA',
-                 simulator: str = 'statevector', n_shots: int = 10,
+    def __init__(self, n_nodes: int = 16, solver: str = 'NumPyEigensolver',
+                 simulator: str = 'qasm', n_shots: int = 10,
                  beta_final: float = 2.) -> None:
         """
         Initialize a QAOA problem or NumPy Eigensolver using Qiskit library.
@@ -30,15 +30,12 @@ class QAOA:
 
         # Define the solver
         if solver == 'QAOA':
-            quantum_instance = qaq.QuantumInstance(
-                backend=qsk.Aer.get_backend(simulator + '_simulator'))
-            qaoa_problem = qaq.algorithms.QAOA(
-                quantum_instance=quantum_instance)
+            quantum_instance = qaq.QuantumInstance(backend=qsk.Aer.get_backend(simulator + '_simulator'))
+            qaoa_problem = qaq.algorithms.QAOA(quantum_instance=quantum_instance)
         elif solver == 'NumPyEigensolver':
             qaoa_problem = qsk.aqua.algorithms.NumPyMinimumEigensolver()
         else:
-            raise NotImplementedError("Requested solver is not implemented. "
-                                      "Use either QAOA_qasm_simulator or "
+            raise NotImplementedError("Requested solver is not implemented. Use either QAOA_qasm_simulator or "
                                       "NumPyEigensolver")
         self.solver = MinimumEigenOptimizer(qaoa_problem)
 
@@ -105,6 +102,15 @@ class QAOA:
         """
         qubo_problem = self._reformulate_qubo(qubo_dict)
         num_reads = n_meas_for_average * self.n_replicas
+
+        # spin_configurations = []
+        # res = self.solver.solve(qubo_problem)
+        # sc_dict = res.min_eigen_solver_result['eigenstate'].sample(num_reads, reverse_endianness=True)
+
+        # for k, v in sc_dict.items():
+        #     sc_ = [np.int(i) for i in k]
+        #     for i in range(int(num_reads * v)):
+        #         spin_configurations.append(sc_)
 
         spin_configurations = []
         for i in range(num_reads):
