@@ -34,6 +34,7 @@ params = {
     'anneals/final': 1,
 }
 
+"""
 params = {
   'quantum_ddpg': False,  # False
   'n_steps': 1000,
@@ -59,7 +60,7 @@ params = {
   'anneals/init': 1,
   'anneals/final': 2,
 }
-
+"""
 
 process_id = None
 from tensorflow.keras.optimizers.schedules import PolynomialDecay, PiecewiseConstantDecay
