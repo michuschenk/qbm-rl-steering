@@ -15,7 +15,7 @@ params = {
     'env/max_steps_per_episode': 50,  # 20,
     'env/required_steps_above_reward_threshold': 1,
     'trainer/batch_size': 32,  # 32
-    'trainer/n_exploration_steps': 200,  # 150    400: works well, too...  , 500,  # 100,
+    'trainer/n_exploration_steps': 250,  # 150    400: works well, too...  , 500,  # 100,
     'trainer/n_episodes_early_stopping': 20,
     'agent/gamma': 0.99,
     'agent/tau_critic': 0.01,  # 0.001,
