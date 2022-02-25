@@ -10,12 +10,12 @@ matplotlib.use('qt5agg')
 
 params = {
     'quantum_ddpg': True,  # False
-    'n_steps': 600,  # 800
+    'n_steps': 500,  #      600
     'env/n_dims': 10,
     'env/max_steps_per_episode': 50,  # 20,
     'env/required_steps_above_reward_threshold': 1,
     'trainer/batch_size': 32,  # 32
-    'trainer/n_exploration_steps': 150,  # 500,  # 100,
+    'trainer/n_exploration_steps': 200,  # 150    400: works well, too...  , 500,  # 100,
     'trainer/n_episodes_early_stopping': 20,
     'agent/gamma': 0.99,
     'agent/tau_critic': 0.01,  # 0.001,
@@ -62,7 +62,7 @@ params = {
 }
 """
 
-process_id = None
+# process_id = None
 from tensorflow.keras.optimizers.schedules import PolynomialDecay, PiecewiseConstantDecay
 from qbm_rl_steering.core.ddpg_agents import ClassicalDDPG, QuantumDDPG
 from qbm_rl_steering.environment.rms_env_nd import RmsSteeringEnv
@@ -129,8 +129,8 @@ n_anneals_schedule = PiecewiseConstantDecay(t_transition, y_transition)
 # PREPARE OUTPUT FOLDER
 date_time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
 out_path = './runs/indiv/' + date_time_now
-if process_id is not None:
-    out_path = out_path + f'_pid_{process_id}'
+#if process_id is not None:
+#    out_path = out_path + f'_pid_0'
 os.makedirs(out_path)
 shutil.copy('./run_ddpg.py', out_path + '/run_ddpg.py')
 shutil.copy('./core/ddpg_agents.py', out_path + '/ddpg_agents.py')
@@ -162,7 +162,7 @@ episode_log = trainer(
 # plt.plot(agentMy.losses_log['Mu'], c='r')
 # plt.show()
 
-plot_training_log(env, agentMy, episode_log)  # , save_path=out_path)
+plot_training_log(env, agentMy, episode_log, apply_scaling=True)  # , save_path=out_path)
 
 # n_training_episodes = len(episode_log['final_rewards'])
 episode_log_2 = {}
@@ -173,17 +173,17 @@ episode_log = episode_log_2
 
 df_train_log = pd.DataFrame(episode_log)
 df_train_log.to_csv(out_path + '/train_log')
-#
-# # Save agent
-# weights = {'main_critic': {'w_vh': agentMy.main_critic_net.w_vh, 'w_hh': agentMy.main_critic_net.w_hh},
-#            'target_critic': {'w_vh': agentMy.target_critic_net.w_vh, 'w_hh': agentMy.target_critic_net.w_hh}}
-# with open(out_path + '/critic_weights.pkl', 'wb') as fid:
-#     pickle.dump(weights, fid)
-#
-# weights = {'main_actor': agentMy.main_actor_net.get_weights(),
-#            'target_actor': agentMy.target_actor_net.get_weights()}
-# with open(out_path + '/actor_weights.pkl', 'wb') as fid:
-#     pickle.dump(weights, fid)
+
+# Save agent
+weights = {'main_critic': {'w_vh': agentMy.main_critic_net.w_vh, 'w_hh': agentMy.main_critic_net.w_hh},
+           'target_critic': {'w_vh': agentMy.target_critic_net.w_vh, 'w_hh': agentMy.target_critic_net.w_hh}}
+with open(out_path + '/critic_weights.pkl', 'wb') as fid:
+    pickle.dump(weights, fid)
+
+weights = {'main_actor': agentMy.main_actor_net.get_weights(),
+           'target_actor': agentMy.target_actor_net.get_weights()}
+with open(out_path + '/actor_weights.pkl', 'wb') as fid:
+    pickle.dump(weights, fid)
 
 # with open(out_path + '/target_actor.pkl', 'wb') as fid:
 #     pickle.dump(agentMy.target_actor_net, fid)
@@ -239,7 +239,7 @@ except ValueError:
 #
 # df_eval_log.to_csv(out_path + '/eval_log_scan')
 plot_evaluation_log(env, params['env/max_steps_per_episode'],
-                    eval_log_scan, type='random')  # save_path=out_path)
+                    eval_log_scan, type='random', apply_scaling=True)  # save_path=out_path)
 
 """
 # EVALUATE AGENT FROM MIN. REWARD STATE. TAKES MULTIPLE STEPS

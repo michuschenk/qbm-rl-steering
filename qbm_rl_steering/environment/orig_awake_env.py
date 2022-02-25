@@ -73,13 +73,15 @@ class e_trajectory_simENV(gym.Env):
             self.action_scale = kwargs.get('action_scale')
         else:
             self.action_scale = 3e-4
+
         if 'state_scale' in kwargs:
             self.state_scale = kwargs.get('state_scale')
         else:
-            self.state_scale = 100
+            # ORIG M.S.: self.state_scale = 100  # worked well with this value.
+            self.state_scale = 100. / 1.7  # Also works, and is what real machine env. is using
         self.kicks_0 = np.zeros(len(self.correctorsH.elements))
 
-        self.threshold = -0.0016*self.state_scale * self.reward_scale  #corresponds to 1.6 mm scaled.
+        self.threshold = -0.0016*self.state_scale * self.reward_scale  #corresponds to what exactly?
 
     def step(self, action):
 

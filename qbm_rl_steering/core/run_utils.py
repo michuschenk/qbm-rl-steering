@@ -235,23 +235,33 @@ def evaluator(env, agent, n_episodes, reward_scan=True):
     return np.array(all_rewards)
 
 
-def plot_training_log(env, agent, data, save_path=None):
+def plot_training_log(env, agent, data, save_path=None, apply_scaling=False):
     """ Plot the log data from the training. """
     # a) Training log
     fig1, axs = plt.subplots(2, 1, sharex=True)
 
     n_training_episodes = len(data['final_rewards'])
+
+    if apply_scaling:
+        # Undo all scalings that have been applied to the reward and multiply by
+        # 1'000 to get from [m] -> [mm]
+        scaling = 1. / (env.state_scale * env.reward_scale) * 1000
+    else:
+        scaling = 1.
+
     axs[0].plot(data['n_total_steps'], label='Total steps')
     axs[0].plot(data['n_random_steps'], '--', c='k',
                 label='Random steps')
-    axs[1].plot(data['initial_rewards'][-n_training_episodes:], c='r', label='Initial')
-    axs[1].plot(data['final_rewards'], c='g', label='Final')
+    axs[1].plot(np.array(data['initial_rewards'])[-n_training_episodes:] * scaling, c='r',
+                label='Initial')
+    axs[1].plot(np.array(data['final_rewards']) * scaling, c='g', label='Final')
     try:
-        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+        axs[1].axhline(env.reward_threshold * scaling, color='k', ls='--')
     except AttributeError:
-        axs[1].axhline(env.threshold, color='k', ls='--')
+        axs[1].axhline(env.threshold * scaling, color='k', ls='--')
+
     axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
+    axs[1].set_ylabel('Reward (mm)')
     axs[1].set_xlabel('Episodes')
     axs[0].legend(loc='upper right')
     axs[1].legend(loc='lower left')
@@ -321,7 +331,7 @@ def plot_training_log(env, agent, data, save_path=None):
 
     # e) Training evolution of final reward and #steps
     win = 10
-    rew_padded = np.pad(np.array(data['final_rewards']),
+    rew_padded = np.pad(np.array(data['final_rewards']) * scaling,
                         (win // 2, win - 1 - win // 2), mode='edge')
     ds_rew = pd.Series(rew_padded)
 
@@ -334,7 +344,7 @@ def plot_training_log(env, agent, data, save_path=None):
     reward_mean = ds_rew.rolling(win).mean().dropna().reset_index(drop=True)
     reward_std = (ds_rew.rolling(win).std().dropna().reset_index(drop=True) /
                   np.sqrt(win))
-    axs[0].plot(data['final_rewards'], lw=1.5, c='tab:green', alpha=0.7)
+    axs[0].plot(np.array(data['final_rewards'])*scaling, lw=1.5, c='tab:green', alpha=0.7)
     axs[0].fill_between(np.arange(len(reward_mean)),
                         reward_mean - reward_std, reward_mean + reward_std,
                         alpha=0.4, color='tab:green')
@@ -350,7 +360,7 @@ def plot_training_log(env, agent, data, save_path=None):
                         alpha=0.4, color='tab:blue')
     axs[1].plot(steps_mean, lw=2, c='tab:blue')
 
-    axs[0].set_ylabel('Final reward (um)')
+    axs[0].set_ylabel('Final reward (mm)')
     axs[1].set_ylabel('# steps')
     axs[1].set_xlabel('Episode')
     plt.tight_layout()
@@ -362,20 +372,27 @@ def plot_training_log(env, agent, data, save_path=None):
 
 
 def plot_evaluation_log(env, max_steps_per_episode, data, save_path=None,
-                        type='random'):
+                        type='random', apply_scaling=False):
     """ Use rewards returned by evaluator function and create plots. """
+    if apply_scaling:
+        # Undo all scalings that have been applied to the reward and multiply by
+        # 1'000 to get from [m] -> [mm]
+        scaling = 1. / (env.state_scale * env.reward_scale) * 1000
+    else:
+        scaling = 1.
+
     # a) Evaluation log
     fig5, axs = plt.subplots(2, 1, sharex=True)
     axs[0].plot([(len(r) - 1) for r in data])
-    axs[1].plot([r[0] for r in data], c='r', label='Initial')
-    axs[1].plot([r[-1] for r in data], c='g', label='Final')
+    axs[1].plot(np.array([r[0] for r in data]) * scaling, c='r', label='Initial')
+    axs[1].plot(np.array([r[-1] for r in data]) * scaling, c='g', label='Final')
     try:
-        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+        axs[1].axhline(env.reward_threshold * scaling, color='k', ls='--')
     except AttributeError:
-        axs[1].axhline(env.threshold, color='k', ls='--')
+        axs[1].axhline(env.threshold * scaling, color='k', ls='--')
 
     axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
+    axs[1].set_ylabel('Reward (mm)')
     axs[1].set_xlabel('Episodes')
     axs[1].legend(loc='lower left')
     plt.tight_layout()
@@ -396,16 +413,16 @@ def plot_evaluation_log(env, max_steps_per_episode, data, save_path=None,
             max_steps = len(data[i])
     axs[0].plot([(len(r) - 1) for r in data])
     for j in range(max_steps):
-        axs[1].plot(all_rewards[:, j], c=cmap(j / max_steps), alpha=0.7)
-    axs[1].plot([r[0] for r in data], c='r', label='Initial')
-    axs[1].plot([r[-1] for r in data], c='g', label='Final')
+        axs[1].plot(all_rewards[:, j] * scaling, c=cmap(j / max_steps), alpha=0.7)
+    axs[1].plot(np.array([r[0] for r in data]) * scaling, c='r', label='Initial')
+    axs[1].plot(np.array([r[-1] for r in data]) * scaling, c='g', label='Final')
     try:
-        axs[1].axhline(env.reward_threshold, color='k', ls='--')
+        axs[1].axhline(env.reward_threshold * scaling, color='k', ls='--')
     except AttributeError:
-        axs[1].axhline(env.threshold, color='k', ls='--')
+        axs[1].axhline(env.threshold * scaling, color='k', ls='--')
 
     axs[0].set_ylabel('Number of steps')
-    axs[1].set_ylabel('Reward (um)')
+    axs[1].set_ylabel('Reward (mm)')
     axs[1].set_xlabel('Episodes')
     axs[1].legend(loc='lower left')
     plt.tight_layout()
