@@ -1,6 +1,7 @@
 from qbm_rl_steering.core.utils import generate_classical_actor
 
-from cern_awake_env.simulation import SimulationEnv
+from cern_awake_env.machine import MachineEnv
+from pyjapc import PyJapc
 from gym.wrappers import TimeLimit
 
 import pickle
@@ -21,7 +22,13 @@ agent.set_weights(w['main_actor'])
 
 
 # SET UP ENV
-env = SimulationEnv(plane='H', remove_singular_devices=True)
+# No selector, AWAKE is an unmultiplexed machine.
+japc = PyJapc(selector="", incaAcceleratorName="AWAKE")
+
+# TODO: what is to be done here?
+japc.rbacLogin()
+
+env = MachineEnv("H", japc=japc)
 env = TimeLimit(env, max_episode_steps=50)
 
 
