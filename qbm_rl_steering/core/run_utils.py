@@ -134,8 +134,8 @@ def trainer(env, agent, n_steps, max_steps_per_episode, batch_size,
 
                 if (((n_steps_episode - n_random_steps_episode) <=
                      (steps_above_thresh + 2)) and
-                        reward > rew_thresh and
-                        n_steps_episode != n_random_steps_episode):
+                        reward > rew_thresh):  # and
+                    # n_steps_episode != n_random_steps_episode):
                     early_stopping_counter += 1
                 else:
                     early_stopping_counter = 0
@@ -344,7 +344,7 @@ def plot_training_log(env, agent, data, save_path=None, apply_scaling=False):
     reward_mean = ds_rew.rolling(win).mean().dropna().reset_index(drop=True)
     reward_std = (ds_rew.rolling(win).std().dropna().reset_index(drop=True) /
                   np.sqrt(win))
-    axs[0].plot(np.array(data['final_rewards'])*scaling, lw=1.5, c='tab:green', alpha=0.7)
+    axs[0].plot(np.array(data['final_rewards']) * scaling, lw=1.5, c='tab:green', alpha=0.7)
     axs[0].fill_between(np.arange(len(reward_mean)),
                         reward_mean - reward_std, reward_mean + reward_std,
                         alpha=0.4, color='tab:green')

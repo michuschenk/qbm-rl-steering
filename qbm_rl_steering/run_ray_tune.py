@@ -1,3 +1,11 @@
+import time
+
+import ray
+from ray import tune
+from ray.tune.schedulers import AsyncHyperBandScheduler
+from ray.tune.suggest import ConcurrencyLimiter
+from ray.tune.suggest.optuna import OptunaSearch
+
 from qbm_rl_steering.core.ddpg_agents import QuantumDDPG
 from qbm_rl_steering.core.run_utils import trainer, evaluator
 
@@ -6,10 +14,9 @@ import numpy as np
 from tensorflow.keras.optimizers.schedules import PolynomialDecay, PiecewiseConstantDecay
 from qbm_rl_steering.environment.orig_awake_env import e_trajectory_simENV
 
-import optuna
-
 
 def get_val(params):
+
     # Learning rate schedules: lr_critic = 5e-4, lr_actor = 1e-4
     lr_schedule_critic = PolynomialDecay(params['lr_critic/init'],
                                          params['n_steps'],
@@ -61,61 +68,63 @@ def get_val(params):
     )
 
     env = e_trajectory_simENV()
-    eval_log_scan = evaluator(env, agentMy, n_episodes=500, reward_scan=False)  # reward_scan=True
+    eval_log_scan = evaluator(env, agentMy, n_episodes=200, reward_scan=False)  # reward_scan=True
     n_tot_eval_steps = np.sum(np.array([(len(r) - 1) for r in eval_log_scan]))
 
     return n_tot_eval_steps
 
 
-def objective(trial):
-    lr_i = trial.suggest_float('lr_i', 1e-4, 1e-1, log=True)
-    lr_f = trial.suggest_float('lr_f', 1e-6, 1e-3, log=True)
-    max_steps = trial.suggest_int("max_steps", 8, 60, step=5)
-    batch_size = trial.suggest_int("batch_size", 8, 48, step=8)
-    n_exp = trial.suggest_int("n_exploration", 10, 200, step=20)
-    gamma = trial.suggest_float("gamma", 0.7, 0.99, log=False)
-    tau = trial.suggest_float("tau", 0.001, 0.2, log=True)
-    act_noise_i = trial.suggest_float("act_noise_i", 0., 0.3, log=False)
-    # act_noise_f = trial.suggest_float("act_noise_f", 0., 0.3, log=False)
-    eps_greedy_i = trial.suggest_float("eps_greedy_i", 0., 0.9, log=False)
-    # exp_frac = trial.suggest_float("exp_frac", 0.7, 0.99, log=False)
-    # anneal_steps = trial.suggest_int("anneal_steps", 60, 200, step=10)
-    # big_gamma = trial.suggest_float("big_gamma", 10, 50, log=True)
-    # beta = trial.suggest_float("beta", 0.02, 5., log=True)
-    # n_meas_avg = trial.suggest_int("n_meas_avg", 1, 30, step=5)
-
+def objective(config):
+    # Hyperparameters
     params = {
-        'quantum_ddpg': True,
-        'n_steps': 200,
+        'quantum_ddpg': True,  # False
+        'n_steps': 260,  # 500
         'env/n_dims': 10,
-        'env/max_steps_per_episode': max_steps,  # 50,
+        'env/max_steps_per_episode': config["max_steps"],  # 50,
         'env/required_steps_above_reward_threshold': 1,
-        'trainer/batch_size': batch_size,  # 32
-        'trainer/n_exploration_steps': n_exp,  # 150    400: works well, too...  , 500,  # 100,
+        'trainer/batch_size': 32,  # 32
+        'trainer/n_exploration_steps': 250,  # 150    400: works well, too...  , 500,  # 100,
         'trainer/n_episodes_early_stopping': 20,
-        'agent/gamma': gamma,
-        'agent/tau_critic': tau,  # 0.001,
-        'agent/tau_actor': tau,  # 0.001,
-        'lr_critic/init': lr_i,  # 1e-3
+        'agent/gamma': 0.99,
+        'agent/tau_critic': 0.01,  # 0.001,
+        'agent/tau_actor': 0.01,  # 0.001,
+        'lr_critic/init': 1e-3,  # 1e-3
         'lr_critic/decay_factor': 1.,
-        'lr_actor/init': lr_i,
+        'lr_actor/init': 1e-3,
         'lr_actor/decay_factor': 1.,
-        'lr/final': lr_f,  # 5e-5,
-        'action_noise/init': act_noise_i,  # 0.2,
+        'lr/final': 5e-5,  # 5e-5,
+        'action_noise/init': 0.2,  # 0.2,
         'action_noise/final': 0.,
-        'epsilon_greedy/init': eps_greedy_i,  # 0.1
+        'epsilon_greedy/init': 0.,  # 0.1
         'epsilon_greedy/final': 0.,
         'anneals/n_pieces': 2,
         'anneals/init': 1,
         'anneals/final': 1,
     }
 
-    n_runs = 5
     val = 0
-    for i in range(n_runs):
+    for i in range(2):
         val += get_val(params)
-    return val
+
+    tune.report(n_total_steps_eval=val)
+    time.sleep(0.1)
 
 
-study = optuna.create_study(direction='minimize')
-study.optimize(objective, n_trials=50)
+ray.init(configure_logging=False)
+
+algo = OptunaSearch()
+algo = ConcurrencyLimiter(algo, max_concurrent=4)
+scheduler = AsyncHyperBandScheduler()
+analysis = tune.run(
+    objective,
+    metric="n_total_steps_eval",
+    mode="min",
+    search_alg=algo,
+    scheduler=scheduler,
+    num_samples=5,
+    config={
+        "max_steps": tune.randint(5, 12)
+    },
+)
+
+print("Best hyperparameters found were: ", analysis.best_config)
