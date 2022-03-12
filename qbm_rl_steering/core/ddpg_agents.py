@@ -277,7 +277,9 @@ class QuantumDDPG:
     def __init__(self, state_space, action_space, gamma, tau_critic,
                  tau_actor, learning_rate_schedule_critic,
                  learning_rate_schedule_actor, grad_clip_actor=20,
-                 grad_clip_critic=1.):
+                 grad_clip_critic=1., n_replicas=1, big_gamma=(20., 0.),
+                 beta=2., n_annealing_steps=100, n_meas_for_average=1,
+                 n_rows_qbm=3, n_columns_qbm=3):
         """ Implements quantum DDPG where actor and critic networks are
         represented by quantum Boltzmann machines and classical neural
         networks, respectively.
@@ -310,11 +312,13 @@ class QuantumDDPG:
             state_space=state_space,
             action_space=action_space,
             small_gamma=self.gamma,
-            n_replicas=1,
-            big_gamma=(20., 0.), beta=2.,   # (20., 0.), beta = 2.  ... (best? (500., 2.), beta = 0.1
-            n_annealing_steps=100,  # 200  (best? 10'000)
-            n_meas_for_average=1,
-            kwargs_qpu={})
+            n_replicas=n_replicas,
+            big_gamma=big_gamma, beta=beta,   # (20., 0.), beta = 2.  ... (best? (500., 2.), beta = 0.1
+            n_annealing_steps=n_annealing_steps,  # 200  (best? 10'000)
+            n_meas_for_average=n_meas_for_average,
+            kwargs_qpu={},
+            n_rows=n_rows_qbm,
+            n_columns=n_columns_qbm)
 
         # Gradient clipping limits
         self.grad_clip_actor = grad_clip_actor

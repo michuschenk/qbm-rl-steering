@@ -238,7 +238,7 @@ class QFunction(object):
                  big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]],
                  n_annealing_steps: int, n_meas_for_average: int,
-                 kwargs_qpu) -> None:
+                 kwargs_qpu, n_rows=3, n_columns=3) -> None:
         """
         Implementation of the Q function (state-action value function).
         :param sampler_type: choose between simulated quantum annealing (SQA),
@@ -269,8 +269,8 @@ class QFunction(object):
         # TODO: adapt documentation
         # TODO: comment on that ... defines architecture of 'QPU'
         self.n_nodes_per_unit_cell = 8
-        self.n_rows = 3  # 4
-        self.n_columns = 3  # 4
+        self.n_rows = n_rows  # 4
+        self.n_columns = n_columns  # 4
         self.n_unit_cells = self.n_rows * self.n_columns
         n_graph_nodes = self.n_unit_cells * self.n_nodes_per_unit_cell
 

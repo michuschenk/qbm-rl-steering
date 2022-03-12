@@ -15,7 +15,7 @@ from qbm_rl_steering.environment.utils import twissReader
 
 class e_trajectory_simENV(gym.Env):
 
-    def __init__(self, **kwargs):
+    def __init__(self, MAX_TIME=50, **kwargs):
         self.current_action = None
         self.initial_conditions = []
         self.__version__ = "0.0.1"
@@ -23,7 +23,7 @@ class e_trajectory_simENV(gym.Env):
 
         # General variables defining the environment
         self.reward_scale = 1000  # 1000
-        self.MAX_TIME = 50
+        self.MAX_TIME = MAX_TIME
         self.is_finalized = False
         self.current_episode = -1
 
