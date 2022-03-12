@@ -76,13 +76,13 @@ def get_val(params):
     )
 
     max_steps_eval = 30
-    n_episodes = 500
+    n_episodes_eval = 500
     env = e_trajectory_simENV(MAX_TIME=max_steps_eval)
-    eval_log_scan = evaluator(env, agentMy, n_episodes=n_episodes, reward_scan=False)  # reward_scan=True
+    eval_log_scan = evaluator(env, agentMy, n_episodes=n_episodes_eval, reward_scan=False)
     n_tot_eval_steps = np.sum(np.array([(len(r) - 1) for r in eval_log_scan]))
 
-    # Normalize
-    n_tot_eval_steps / (max_steps_eval * n_episodes)
+    # Normalize -> we want metric to be avg. #steps needed to find objective
+    n_tot_eval_steps / float(n_episodes)
 
     return n_tot_eval_steps
 
