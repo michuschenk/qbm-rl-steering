@@ -513,8 +513,6 @@ class QuantumDDPG:
         # output for dQ / da of shape (5, 10).
         # grads_mean = np.zeros((batch_size, self.action_dim))
 
-        print('Calling main_critic 2x n_action_dims to calculate q values on batch in get_action_derivative ...')
-
         n_avg = 1
         grads = np.zeros((n_avg, batch_size, self.n_dims_action_space))
         for j in range(n_avg):

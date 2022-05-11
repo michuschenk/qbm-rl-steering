@@ -10,11 +10,11 @@ import matplotlib
 
 params = {
     'quantum_ddpg': True,  # False
-    'n_steps': 320,  #      600
+    'n_steps': 210,  #      600
     'env/max_steps_per_episode': 16,  # 20,
     'env/required_steps_above_reward_threshold': 1,
-    'trainer/batch_size': 16,  # 32
-    'trainer/n_exploration_steps': 300,  # 150    400: works well, too...  , 500,  # 100,
+    'trainer/batch_size': 48,  # 32
+    'trainer/n_exploration_steps': 200,  # 150    400: works well, too...  , 500,  # 100,
     'trainer/n_episodes_early_stopping': 20000,
     'agent/gamma': 0.83,
     'agent/tau_critic': 0.0028,  # 0.001,
@@ -29,8 +29,8 @@ params = {
     'epsilon_greedy/init': 0.55,  # 0.1
     'epsilon_greedy/final': 0.,
     'anneals/n_pieces': 2,
-    'anneals/init': 10,
-    'anneals/final': 10,
+    'anneals/init': 30,
+    'anneals/final': 30,
 }
 
 """
