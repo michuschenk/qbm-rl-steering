@@ -338,7 +338,7 @@ def readAWAKEelectronTwiss():
     except:
         print('Exception ...')
         filename_awakeElectron = \
-            '/workspace/qbm-rl-steering/qbm_rl_steering/environment/utils/electron_tt43.out'
+            '/Users/michael/Desktop/qbm-rl-steering/qbm_rl_steering/environment/utils/electron_tt43.out'
         twissH, twissV = readTwissFromMADX(filename_awakeElectron)
     return twissH, twissV
 
