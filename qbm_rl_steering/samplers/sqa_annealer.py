@@ -140,7 +140,6 @@ class SQA:
         # sqaod doc.)
         self.annealer.set_preferences(n_trotters=self.n_replicas)
 
-
         # Annealing
         spin_configurations = np.empty(
             (n_meas_for_average, self.n_replicas, self.n_nodes))
@@ -159,6 +158,5 @@ class SQA:
             # (n_replicas, n_hidden_nodes).
             # Note that .get_x() would return the bits (i.e. -1 spins are 0s)
             spin_configurations[i, :, :] = self.annealer.get_q()
-        # print('get_hamiltonian', self.annealer.get_hamiltonian()[1])
 
         return spin_configurations
