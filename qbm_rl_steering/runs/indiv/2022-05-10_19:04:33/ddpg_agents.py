@@ -435,10 +435,10 @@ class QuantumDDPG:
         with tf.GradientTape() as tape2:
             a_mu = self.main_actor_net(state)
 
-        # print('Calling main_critic to calculate q values on batch in _get_gradients_actor ...')
-        # q, _, _ = self.main_critic_net.calculate_q_value_on_batch(state, a_mu)
-        # self.q_log['before'].append(np.mean(q))
-        # self.losses_log['Q'].append(np.mean(q))
+        print('Calling main_critic to calculate q values on batch in _get_gradients_actor ...')
+        q, _, _ = self.main_critic_net.calculate_q_value_on_batch(state, a_mu)
+        self.q_log['before'].append(np.mean(q))
+        self.losses_log['Q'].append(np.mean(q))
 
         # Apply chain-rule manually here:
         jacobi_mu_wrt_mu_theta = tape2.jacobian(
@@ -512,8 +512,6 @@ class QuantumDDPG:
         # e.g. if we have batch size of 5, and 10 actions, we expect an
         # output for dQ / da of shape (5, 10).
         # grads_mean = np.zeros((batch_size, self.action_dim))
-
-        print('Calling main_critic 2x n_action_dims to calculate q values on batch in get_action_derivative ...')
 
         n_avg = 1
         grads = np.zeros((n_avg, batch_size, self.n_dims_action_space))

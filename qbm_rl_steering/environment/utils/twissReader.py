@@ -7,7 +7,7 @@ Created on Fri Aug 24 18:47:33 2012
 import math
 import warnings
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import operator
 import numpy
 from numpy import matrix
@@ -47,76 +47,76 @@ def getSigma(beta, emittance=3.5):  # mm
     return numpy.sqrt(emittance * beta * 0.938272 / 450)  # print 3.5*0.938272/450 #7.3 e-3
 
 
-def plotTwiss(twissSequences, title=''):
-    fig, ax = plt.subplots(2)
-    fig.set_size_inches(5.6, 2.2)
-    plt.subplots_adjust(top=.9, left=.1, right=0.95)
-    ax[0].set_title(title)
+# def plotTwiss(twissSequences, title=''):
+#     fig, ax = plt.subplots(2)
+#     fig.set_size_inches(5.6, 2.2)
+#     plt.subplots_adjust(top=.9, left=.1, right=0.95)
+#     ax[0].set_title(title)
 
-    s = {}
-    betas = {}
-    ds = {}
+#     s = {}
+#     betas = {}
+#     ds = {}
 
-    colors = ['black', 'mediumblue']
+#     colors = ['black', 'mediumblue']
 
-    for p, plane in enumerate(PLANES):
-        s[plane] = twissSequences[p].getS()
+#     for p, plane in enumerate(PLANES):
+#         s[plane] = twissSequences[p].getS()
 
-        betas[plane] = twissSequences[p].getBeta()
-        ax[0].plot(s[plane], betas[plane], '-', color=colors[p], label=plane)
-        ax[0].set_ylabel('beta [m]')
-        ax[0].set_xlabel('s [m]')
-        ax[0].legend(loc=1)
+#         betas[plane] = twissSequences[p].getBeta()
+#         ax[0].plot(s[plane], betas[plane], '-', color=colors[p], label=plane)
+#         ax[0].set_ylabel('beta [m]')
+#         ax[0].set_xlabel('s [m]')
+#         ax[0].legend(loc=1)
 
-        ds[plane] = twissSequences[p].getD()
-        ax[1].plot(s[plane], ds[plane], '-', color=colors[p], label=plane)
-        ax[1].set_ylabel('dispersion [m]')
-        ax[1].set_xlabel('s [m]')
-        ax[1].legend(loc=1)
-    plt.show()
+#         ds[plane] = twissSequences[p].getD()
+#         ax[1].plot(s[plane], ds[plane], '-', color=colors[p], label=plane)
+#         ax[1].set_ylabel('dispersion [m]')
+#         ax[1].set_xlabel('s [m]')
+#         ax[1].legend(loc=1)
+#     plt.show()
 
 
-def plotTwissAndSigma(twissSequences, title=''):  # TODO:xlim?
+# def plotTwissAndSigma(twissSequences, title=''):  # TODO:xlim?
 
-    s = {}
-    betas = {}
-    sigmas = {}
+#     s = {}
+#     betas = {}
+#     sigmas = {}
 
-    f, ax = plt.subplots(3)
-    colors = ['limegreen', 'mediumpurple']
+#     f, ax = plt.subplots(3)
+#     colors = ['limegreen', 'mediumpurple']
 
-    ax[0].set_title(title)
+#     ax[0].set_title(title)
 
-    for p, plane in enumerate(PLANES):
+#     for p, plane in enumerate(PLANES):
 
-        s[plane] = twissSequences[p].getS()
+#         s[plane] = twissSequences[p].getS()
 
-        betas[plane] = twissSequences[p].getBeta()
-        ax[0].plot(s[plane], betas[plane], '-', color=colors[p], label=plane)
-        ax[0].set_ylabel('beta [m]')
+#         betas[plane] = twissSequences[p].getBeta()
+#         ax[0].plot(s[plane], betas[plane], '-', color=colors[p], label=plane)
+#         ax[0].set_ylabel('beta [m]')
 
-        sigmas[plane] = [getSigma(b) for b in betas[plane]]
+#         sigmas[plane] = [getSigma(b) for b in betas[plane]]
 
-        ax[p + 1].plot(s[plane], sigmas[plane], '-', color=colors[p], label=plane)
-        ax[p + 1].fill_between(s[plane], sigmas[plane], [-si for si in sigmas[plane]], color=colors[p], alpha=0.5)
-        ax[p + 1].set_ylabel('sigma [mm]')
+#         ax[p + 1].plot(s[plane], sigmas[plane], '-', color=colors[p], label=plane)
+#         ax[p + 1].fill_between(s[plane], sigmas[plane], [-si for si in sigmas[plane]], color=colors[p], alpha=0.5)
+#         ax[p + 1].set_ylabel('sigma [mm]')
 
-        # plot monitors
-        monitors = twissSequences[p].getElements('BP')
-        s[plane] = monitors.getS()
-        betas[plane] = monitors.getBeta()
-        ax[p + 1].plot(s[plane], [getSigma(b) for b in betas[plane]], 's', color=colors[p])
+#         # plot monitors
+#         monitors = twissSequences[p].getElements('BP')
+#         s[plane] = monitors.getS()
+#         betas[plane] = monitors.getBeta()
+#         ax[p + 1].plot(s[plane], [getSigma(b) for b in betas[plane]], 's', color=colors[p])
 
-        # plot collimators
-        collimators = twissSequences[p].getElements('TCDI' + plane)
-        for c in collimators.elements:
-            print(c.name, c.s, c.beta, getSigma(c.beta))
-        ax[p + 1].plot(collimators.getS(), [getSigma(b) for b in collimators.getBeta()], 'sk')
+#         # plot collimators
+#         collimators = twissSequences[p].getElements('TCDI' + plane)
+#         for c in collimators.elements:
+#             print(c.name, c.s, c.beta, getSigma(c.beta))
+#         ax[p + 1].plot(collimators.getS(), [getSigma(b) for b in collimators.getBeta()], 'sk')
 
-        ax[0].legend(loc=3)
-        ax[p + 1].legend(loc=3)
+#         ax[0].legend(loc=3)
+#         ax[p + 1].legend(loc=3)
 
-    ax[2].set_xlabel('S [m]')
+#     ax[2].set_xlabel('S [m]')
 
 
 def getQuadPhases(filename, testvalues):
@@ -140,83 +140,83 @@ def getQuadPhases(filename, testvalues):
         print(ik)
 
 
-def compareTwissFiles(file1, file2, refElement=None, posAttr='S'):
-    getPosAttr = operator.attrgetter('get' + posAttr)
+# def compareTwissFiles(file1, file2, refElement=None, posAttr='S'):
+#     getPosAttr = operator.attrgetter('get' + posAttr)
 
-    s1 = readTwissFromMADX(file1)
-    s2 = readTwissFromMADX(file2)
-    desc = [''.join(f.split('/')[-1].split('.')[:-1]) for f in [file1, file2]]
+#     s1 = readTwissFromMADX(file1)
+#     s2 = readTwissFromMADX(file2)
+#     desc = [''.join(f.split('/')[-1].split('.')[:-1]) for f in [file1, file2]]
 
-    s1_monitors = [s.getElements('BPMI') for s in s1]
-    s2_monitors = [s.getElements('BPMI') for s in s2]
+#     s1_monitors = [s.getElements('BPMI') for s in s1]
+#     s2_monitors = [s.getElements('BPMI') for s in s2]
 
-    s1_monitors[0].removePlaneFromMonitors()
-    s1_monitors[1].removePlaneFromMonitors()
+#     s1_monitors[0].removePlaneFromMonitors()
+#     s1_monitors[1].removePlaneFromMonitors()
 
-    s2_monitors[0].removePlaneFromMonitors()
-    s2_monitors[1].removePlaneFromMonitors()
+#     s2_monitors[0].removePlaneFromMonitors()
+#     s2_monitors[1].removePlaneFromMonitors()
 
-    for index, plane in enumerate(['H', 'V']):
-        if not len(s1_monitors[index].getNames()) == len(s2_monitors[index].getNames()):
-            useNames = [x for x in s1_monitors[index].getNames() if x in s2_monitors[index].getNames()]
-            s1_monitors[index] = s1_monitors[index].getMonitors(useNames)
-            s2_monitors[index] = s2_monitors[index].getMonitors(useNames)
-    #            print len(s1_monitors[index].getNames()), len(s2_monitors[index].getNames())
+#     for index, plane in enumerate(['H', 'V']):
+#         if not len(s1_monitors[index].getNames()) == len(s2_monitors[index].getNames()):
+#             useNames = [x for x in s1_monitors[index].getNames() if x in s2_monitors[index].getNames()]
+#             s1_monitors[index] = s1_monitors[index].getMonitors(useNames)
+#             s2_monitors[index] = s2_monitors[index].getMonitors(useNames)
+#     #            print len(s1_monitors[index].getNames()), len(s2_monitors[index].getNames())
 
-    if not refElement:
-        refElement = s1_monitors[0].getNames()[0]
+#     if not refElement:
+#         refElement = s1_monitors[0].getNames()[0]
 
-    if len(list(set(getPosAttr(s1_monitors[0])()))) == 1:
-        posAttr = 'S'
-        getPosAttr = operator.attrgetter('getS')
+#     if len(list(set(getPosAttr(s1_monitors[0])()))) == 1:
+#         posAttr = 'S'
+#         getPosAttr = operator.attrgetter('getS')
 
-    diff = getPosAttr(s1[0].getElements(refElement))()[0] - getPosAttr(s2[0].getElements(refElement))()[0]
+#     diff = getPosAttr(s1[0].getElements(refElement))()[0] - getPosAttr(s2[0].getElements(refElement))()[0]
 
-    print('Shift', desc[1], 'by', diff, 'to', desc[0], posAttr)
-    xmin = [getPosAttr(s)()[0] for s in s1_monitors]
-    xmax = [getPosAttr(s)()[-1] for s in s1_monitors]
+#     print('Shift', desc[1], 'by', diff, 'to', desc[0], posAttr)
+#     xmin = [getPosAttr(s)()[0] for s in s1_monitors]
+#     xmax = [getPosAttr(s)()[-1] for s in s1_monitors]
 
-    for index, plane in enumerate(['x', 'y']):
+#     for index, plane in enumerate(['x', 'y']):
 
-        plt.figure()
-        plt.title(str(desc) + ' ' + plane)
-        ds = s1[index].getElement(refElement).s - s2[index].getElement(refElement).s
-        dmu = s1[index].getElement(refElement).main_actor_net - s2[index].getElement(refElement).main_actor_net
-        plt.plot(s1[index].getS(), s1[index].getMu())
-        plt.plot([s + ds for s in s2[index].getS()], [mu + dmu for mu in s2[index].getMu()])
-        plt.plot([s for s in s2[index].getS()], s2[index].getMu(), ':')
-        plt.xlabel('S')
-        plt.ylabel('mu')
-        print(ds)
+#         plt.figure()
+#         plt.title(str(desc) + ' ' + plane)
+#         ds = s1[index].getElement(refElement).s - s2[index].getElement(refElement).s
+#         dmu = s1[index].getElement(refElement).main_actor_net - s2[index].getElement(refElement).main_actor_net
+#         plt.plot(s1[index].getS(), s1[index].getMu())
+#         plt.plot([s + ds for s in s2[index].getS()], [mu + dmu for mu in s2[index].getMu()])
+#         plt.plot([s for s in s2[index].getS()], s2[index].getMu(), ':')
+#         plt.xlabel('S')
+#         plt.ylabel('mu')
+#         print(ds)
 
-        for val in ['Beta', 'X', 'D']:
-            getValAttr = operator.attrgetter('get' + val)
+#         for val in ['Beta', 'X', 'D']:
+#             getValAttr = operator.attrgetter('get' + val)
 
-            peak = max(abs(np.array(getValAttr(s1_monitors[index])()) - np.array(getValAttr(s2_monitors[index])())))
-            print(val, plane, 'max', peak)
+#             peak = max(abs(np.array(getValAttr(s1_monitors[index])()) - np.array(getValAttr(s2_monitors[index])())))
+#             print(val, plane, 'max', peak)
 
-            if peak:
-                plt.figure()
-                plt.subplot(211)
-                plt.title(val + plane)
-                plt.plot(getPosAttr(s1[index])(), getValAttr(s1[index])(), '-', color='b', label=desc[0])
-                plt.plot(getPosAttr(s1_monitors[index])(), getValAttr(s1_monitors[index])(), 's', color='b')
-                plt.plot([s + diff for s in getPosAttr(s2[index])()], getValAttr(s2[index])(), ':', color='r',
-                         label=desc[1])
-                plt.plot([s + diff for s in getPosAttr(s2_monitors[index])()], getValAttr(s2_monitors[index])(), 'o',
-                         color='r')
-                plt.xlim(xmin[index], xmax[index])
+#             if peak:
+#                 plt.figure()
+#                 plt.subplot(211)
+#                 plt.title(val + plane)
+#                 plt.plot(getPosAttr(s1[index])(), getValAttr(s1[index])(), '-', color='b', label=desc[0])
+#                 plt.plot(getPosAttr(s1_monitors[index])(), getValAttr(s1_monitors[index])(), 's', color='b')
+#                 plt.plot([s + diff for s in getPosAttr(s2[index])()], getValAttr(s2[index])(), ':', color='r',
+#                          label=desc[1])
+#                 plt.plot([s + diff for s in getPosAttr(s2_monitors[index])()], getValAttr(s2_monitors[index])(), 'o',
+#                          color='r')
+#                 plt.xlim(xmin[index], xmax[index])
 
-                plt.legend()
-                plt.subplot(212)
-                plt.plot(getPosAttr(s1_monitors[index])(),
-                         np.array(getValAttr(s1_monitors[index])()) - np.array(getValAttr(s2_monitors[index])()), 'g:x')
-                plt.xlim(xmin[index], xmax[index])
+#                 plt.legend()
+#                 plt.subplot(212)
+#                 plt.plot(getPosAttr(s1_monitors[index])(),
+#                          np.array(getValAttr(s1_monitors[index])()) - np.array(getValAttr(s2_monitors[index])()), 'g:x')
+#                 plt.xlim(xmin[index], xmax[index])
 
-                plt.xlabel(posAttr)
+#                 plt.xlabel(posAttr)
 
-                if val == 'X':
-                    plt.ylabel('[mu m]')
+#                 if val == 'X':
+#                     plt.ylabel('[mu m]')
 
 
 def readTwissFromMADX(inputFile, name=''):
@@ -338,7 +338,7 @@ def readAWAKEelectronTwiss():
     except:
         print('Exception ...')
         filename_awakeElectron = \
-            '/home/mischenk/PycharmProjects/qbm-rl-steering/qbm_rl_steering/environment/utils/electron_tt43.out'
+            '/workspace/qbm-rl-steering/qbm_rl_steering/environment/utils/electron_tt43.out'
         twissH, twissV = readTwissFromMADX(filename_awakeElectron)
     return twissH, twissV
 

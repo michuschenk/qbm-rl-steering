@@ -336,8 +336,8 @@ class QuantumDDPG:
             actor_hidden_layers)
 
         # CRITIC
-        self.main_critic_net = QFunction(**kwargs_q_func, qfunc_it=0)
-        self.target_critic_net = QFunction(**kwargs_q_func, qfunc_it=1)
+        self.main_critic_net = QFunction(**kwargs_q_func)
+        self.target_critic_net = QFunction(**kwargs_q_func)
 
         # Copy weights of main networks onto targets
         self.target_actor_net.set_weights(self.main_actor_net.get_weights())
@@ -391,10 +391,10 @@ class QuantumDDPG:
 
         # Evaluate Q value for new actor (providing same state, should now
         # give higher Q)
-        # a_mu_after = self.main_actor_net(s)
-        # q_after, _, _ = self.main_critic_net.calculate_q_value_on_batch(
-        #     s, a_mu_after)
-        # self.q_log['after'].append(np.mean(q_after))
+        a_mu_after = self.main_actor_net(s)
+        q_after, _, _ = self.main_critic_net.calculate_q_value_on_batch(
+            s, a_mu_after)
+        self.q_log['after'].append(np.mean(q_after))
 
         # Apply Polyak updates
         self._update_target_critic()
@@ -408,7 +408,6 @@ class QuantumDDPG:
         next_action = self.target_actor_net(next_state)
 
         # Loop over batch of states, actions, rewards, next_states
-        print('Looping over batch of samples, getting current and future Q values in _update_critic ...')
         for jj in np.arange(len(state)):
             # Recalculate q_value of (sample.state, sample.action) pair
             q_value, spin_configs, visible_nodes = (
@@ -435,10 +434,9 @@ class QuantumDDPG:
         with tf.GradientTape() as tape2:
             a_mu = self.main_actor_net(state)
 
-        # print('Calling main_critic to calculate q values on batch in _get_gradients_actor ...')
-        # q, _, _ = self.main_critic_net.calculate_q_value_on_batch(state, a_mu)
-        # self.q_log['before'].append(np.mean(q))
-        # self.losses_log['Q'].append(np.mean(q))
+        q, _, _ = self.main_critic_net.calculate_q_value_on_batch(state, a_mu)
+        self.q_log['before'].append(np.mean(q))
+        self.losses_log['Q'].append(np.mean(q))
 
         # Apply chain-rule manually here:
         jacobi_mu_wrt_mu_theta = tape2.jacobian(
@@ -513,8 +511,6 @@ class QuantumDDPG:
         # output for dQ / da of shape (5, 10).
         # grads_mean = np.zeros((batch_size, self.action_dim))
 
-        print('Calling main_critic 2x n_action_dims to calculate q values on batch in get_action_derivative ...')
-
         n_avg = 1
         grads = np.zeros((n_avg, batch_size, self.n_dims_action_space))
         for j in range(n_avg):
@@ -541,7 +537,6 @@ class QuantumDDPG:
         return grads
 
     def get_analytical_action_derivative(self, states, actions):
-        print('Calling main_critic to calculate q values on batch in get_analytical_action_derivative ...')
         _, _, _, _, grads = self.main_critic_net.calculate_q_value_on_batch(
             states, np.array(actions), calc_derivative=True)
         return np.asarray(-grads, dtype=np.float32)

@@ -54,10 +54,11 @@ if params['quantum_ddpg']:
                           action_space=env.action_space,
                           learning_rate_schedule_critic=lr_schedule_critic,
                           learning_rate_schedule_actor=lr_schedule_actor,
-                          grad_clip_actor=1e4, grad_clip_critic=1.,
+                          grad_clip_actor=np.inf, grad_clip_critic=np.inf,
                           gamma=params['agent/gamma'],
                           tau_critic=params['agent/tau_critic'],
                           tau_actor=params['agent/tau_actor'],
+                          
                           )
 else:
     agentMy = ClassicalDDPG(state_space=env.observation_space,

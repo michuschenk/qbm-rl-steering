@@ -7,7 +7,7 @@ import gym
 from pyqubo import Spin
 import dimod
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 # SQAOD (simulated quantum annealing)
 try:
@@ -17,15 +17,18 @@ except ImportError:
 
 # Amazon Braket
 try:
-    from qbm_rl_steering.samplers.qpu_annealer import QPU
+    from qbm_rl_steering.samplers.qpu_annealer_dwave import QPU
 except ImportError:
-    print('! Cannot import libraries required for QPU (Amazon Braket)...')
+    print('! Cannot import libraries required for QPU (DWave)...')
 
 # DWave SimulatedAnnealing
 from qbm_rl_steering.samplers.sa_annealer import SA
 
 # Qiskit samplers
-from qbm_rl_steering.samplers.qaoa_solver import QAOA
+try:
+    from qbm_rl_steering.samplers.qaoa_solver import QAOA
+except ImportError:
+    print('! Cannot import libraries required for QAOA ...')
 
 
 def get_visible_nodes_array(state: np.ndarray, action: np.ndarray,
@@ -238,7 +241,7 @@ class QFunction(object):
                  big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]],
                  n_annealing_steps: int, n_meas_for_average: int,
-                 kwargs_qpu, n_rows=3, n_columns=3) -> None:
+                 kwargs_qpu, n_rows=2, n_columns=3, qfunc_it=0) -> None:
         """
         Implementation of the Q function (state-action value function).
         :param sampler_type: choose between simulated quantum annealing (SQA),
@@ -283,10 +286,10 @@ class QFunction(object):
                 beta=beta, big_gamma=big_gamma, n_replicas=n_replicas,
                 n_nodes=n_graph_nodes, n_annealing_steps=n_annealing_steps)
         elif sampler_type == 'QPU':
+            print('SETTING PROPER QPU AS SAMPLER')
             self.sampler = QPU(
-                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
-                device=kwargs_qpu['aws_device'],
-                s3_location=kwargs_qpu['s3_location'])
+                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes,
+                qfunc_it=qfunc_it)
         elif sampler_type == 'QAOA':
             self.sampler = QAOA(n_nodes=n_graph_nodes, simulator='qasm',
                                 n_shots=10, beta_final=beta)
