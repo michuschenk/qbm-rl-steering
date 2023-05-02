@@ -5,7 +5,7 @@ import math
 from scipy.integrate import quad
 import gym
 
-from .logger import Logger
+from qbm_rl_steering.environment.logger import Logger
 
 
 class TwissElement:
@@ -46,17 +46,16 @@ def transport(element1: TwissElement, element2: TwissElement, x: float,
 
 class TargetSteeringEnv(gym.Env):
     def __init__(self, n_bits_observation_space: int = 8,
-                 max_steps_per_episode: int = 20, n_actions: int = 2,
-                 simple_reward: bool = True, debug: bool = False) -> None:
-        """
+                 max_steps_per_episode: int = 20, n_actions: int = 2) -> None:
+        """ Initializes a 1D beam steering environment with a discrete, binary
+        state space.
         :param n_bits_observation_space: number of bits used to represent the
-        observation space (will be discretized into
-        2**n_bits_observation_space bins)
+        observation space (will be discretized into 2**n_bits_observation_space
+        bins)
         :param max_steps_per_episode: max number of steps we allow agent to
         'explore' per episode. After this number of steps, episode is aborted.
         :param n_actions: number of actions. Here only values 2 (up or down),
-        and 3 (up, down, stay) are possible.
-        :param debug: Flag for debugging, adds some prints here and there. """
+        and 3 (up, down, stay) are possible."""
         super(TargetSteeringEnv, self).__init__()
 
         # DEFINE TRANSFER LINE
@@ -92,7 +91,7 @@ class TargetSteeringEnv(gym.Env):
         x_min_plus_delta, _ = self.get_pos_at_bpm_target(
             self.mssb_angle_min + self.mssb_delta)
         self.x_delta = x_min_plus_delta - self.x_min
-        self.x_margin_discretization = 3 * self.x_delta
+        self.x_margin_discretization = 3. * self.x_delta
         self.x_margin_abort_episode = (
                 self.x_margin_discretization - 2. * self.x_delta)
 
@@ -120,14 +119,12 @@ class TargetSteeringEnv(gym.Env):
         self.n_bits_observation_space = n_bits_observation_space
 
         # For cancellation when beyond certain number of steps in an episode
-        self.simple_reward = simple_reward
         self.step_count = None
         self.max_steps_per_episode = max_steps_per_episode
-        self.reward_threshold = 0.85 * self.get_max_reward()
+        self.reward_threshold = 0.85 * self.get_max_intensity()
 
         # Logging and debugging
-        self.logger = Logger()
-        self.debug = debug
+        self.interaction_logger = Logger()
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict]:
         """ Perform one step in the environment (take an action, update
@@ -171,14 +168,14 @@ class TargetSteeringEnv(gym.Env):
         else:
             pass
 
-        if self.simple_reward:
-            reward = self.simplify_reward(reward)
+        reward = self.get_reward(reward)
 
         # Log history
-        self.logger.log_episode.append(
+        self.interaction_logger.log_episode.append(
             [x_binary, action, reward, x_new_binary, done, done_reason])
         if done:
-            self.logger.log_all.append(self.logger.log_episode)
+            self.interaction_logger.log_all.append(
+                self.interaction_logger.log_episode)
 
         return self.state, reward, done, {}
 
@@ -191,8 +188,8 @@ class TargetSteeringEnv(gym.Env):
         if init_state is None:
             # Initialize mssb_angle within self.mssb_angle_min and
             # self.mssb_angle_max
-            r_init = 1.1*self.reward_threshold
-            while r_init > self.reward_threshold:
+            r_init = 1.2*self.reward_threshold
+            while r_init > 1.1*self.reward_threshold:
                 self.mssb_angle = np.random.uniform(
                     low=self.mssb_angle_min, high=self.mssb_angle_max)
                 x_init, r_init = self.get_pos_at_bpm_target(self.mssb_angle)
@@ -221,68 +218,50 @@ class TargetSteeringEnv(gym.Env):
         self.state = x_init_binary
 
         self.step_count = 0
-        self.logger.episode_reset()
-
-        if self.debug:
-            print('x_init', x_init)
-            print('x_init_discrete', self._make_state_discrete(x_init))
-            print('x_init_binary', x_init_binary)
-            print('x_init_binary_float',
-                  self.make_binary_state_float(x_init_binary))
+        self.interaction_logger.episode_reset()
 
         return self.state
 
     def clear_log(self) -> None:
         """ Delete all log / history of the logger of this environment. """
-        self.logger.clear_all()
+        self.interaction_logger.clear_all()
 
-    def _get_reward(self, beam_pos: float) -> float:
-        """ Calculate reward of environment given beam position on target.
-        Reward is defined by integrated intensity on target (assuming
-        Gaussian beam, integration range +/- 3 sigma).
-        :param beam_pos: beam position on target (not known to RL agent)
-        :return: reward, float in range ~[0, 1]. """
+    def _get_integrated_intensity(self, beam_position: float) -> float:
+        """ Calculate integrated intensity given beam position on target
+        assuming Gaussian beam (integration range +/- 3 sigma).
+        :param beam_position: beam position on target (not known to RL agent)
+        :return: integrated intensity, float in range ~[0, 1]. """
         emittance = 1.1725E-08
         sigma = math.sqrt(self.target.beta * emittance)
         self.intensity_on_target = quad(
             lambda x: 1 / (sigma * (2 * math.pi) ** 0.5) * math.exp(
-                (x - beam_pos) ** 2 / (-2 * sigma ** 2)),
+                (x - beam_position) ** 2 / (-2 * sigma ** 2)),
             -3*sigma, 3*sigma)
 
-        reward = self.intensity_on_target[0]
+        return self.intensity_on_target[0]
 
-        return reward
-
-    def simplify_reward(self, reward: float) -> float:
+    def get_reward(self, intensity: float) -> float:
         """
-        Simplify, i.e. discretize the reward. Give only positive reward when
-        episode is solved
-        :param reward: input reward
-        :return discretized simplified reward
+        Calculates reward from integrated intensity. Give additional higher
+        reward when episode is finished.
+        :param intensity: integrated intensity on target
+        :return corresponding reward
         """
-        # if reward > self.reward_threshold:
-        #     reward = 100.
-        # else:
-        #     reward = 0.
-        if reward > self.reward_threshold:
-            reward = 50
-        else:
-            reward = -100. * (1. - reward)
-        return reward
+        return -100. * (1. - intensity)
 
     def get_pos_at_bpm_target(self, total_angle: float) -> Tuple[float, float]:
         """ Transports beam through the transfer line and calculates the
-        position at the BPM and at the target. These are required for the reward
-        calculation and to get the state based on the currently set dipole
-        angle.
+        position at the BPM and at the target. These are required for the
+        intensity calculation and to get the state based on the currently set
+        dipole angle.
         :param total_angle: total kick angle of the MSSB dipole (rad)
-        :return position at BPM and reward as a tuple """
+        :return position at BPM and intensity as a tuple """
         x_bpm, px_bpm = transport(self.mssb, self.bpm1, self.x0, total_angle)
         x_target, px_target = transport(
             self.mssb, self.target, self.x0, total_angle)
 
-        reward = self._get_reward(x_target)
-        return x_bpm, reward
+        intensity = self._get_integrated_intensity(x_target)
+        return x_bpm, intensity
 
     def _make_state_discrete_binary(self, x: float) -> np.ndarray:
         """
@@ -337,12 +316,13 @@ class TargetSteeringEnv(gym.Env):
              self.x_min - self.x_margin_discretization)
         return x
 
-    def get_max_reward(self) -> float:
-        """ Calculate maximum reward. This is used to define the threshold
-        for cancellation of an episode. Note that this is usually not known.
-        :return maximum reward """
-        _, _, rewards = self.get_response()
-        return np.max(rewards)
+    def get_max_intensity(self) -> float:
+        """ Calculate maximum integrated intensity. This is used to define the
+        threshold for cancellation of an episode. Note that this is potentially
+        not known for all environments.
+        :return maximum integrated intensity """
+        _, _, intensities = self.get_response()
+        return np.max(intensities)
 
     def get_response(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Calculate response of the environment, i.e. the x_position and
@@ -352,12 +332,12 @@ class TargetSteeringEnv(gym.Env):
         and rewards. """
         angles = np.linspace(self.mssb_angle_min, self.mssb_angle_max, 1000)
         x_pos = np.zeros_like(angles)
-        rewards = np.zeros_like(angles)
+        intensities = np.zeros_like(angles)
         for i, ang in enumerate(angles):
-            x, r = self.get_pos_at_bpm_target(total_angle=ang)
+            x, intens = self.get_pos_at_bpm_target(total_angle=ang)
             x_pos[i] = x
-            rewards[i] = r
-        return angles, x_pos, rewards
+            intensities[i] = intens
+        return angles, x_pos, intensities
 
     def get_all_states(self) -> Tuple[np.ndarray, List]:
         """

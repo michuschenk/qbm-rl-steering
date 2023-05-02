@@ -11,7 +11,7 @@ except ImportError:
 class SQA:
     def __init__(self, big_gamma: Tuple[float, float], beta: float,
                  n_replicas: int, n_nodes: int = 16,
-                 big_gamma_schedule: str = 'linear') -> None:
+                 big_gamma_schedule: str = 'logarithmic') -> None:
         """
         Initialize a simulated quantum annealer (SQA).
         :param big_gamma: Transverse field; first entry is initial gamma and
@@ -87,7 +87,7 @@ class SQA:
         # TODO: Is it even relevant for us whether we do minimize or maximize?
         self.annealer.set_qubo(qubo_matrix, sq.minimize)
 
-    def anneal(self, qubo_dict: Dict, n_meas_for_average: int, n_steps: int) \
+    def sample(self, qubo_dict: Dict, n_meas_for_average: int, n_steps: int) \
             -> np.ndarray:
         """
         Run the actual QUANTUM annealing process with decaying transverse field

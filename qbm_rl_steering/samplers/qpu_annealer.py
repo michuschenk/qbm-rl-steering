@@ -48,7 +48,7 @@ class QPU:
         self.beta_init = beta
         self.beta_final = beta
 
-    def anneal(self, qubo_dict: Dict, n_meas_for_average: int,
+    def sample(self, qubo_dict: Dict, n_meas_for_average: int,
                *args, **kwargs) -> np.ndarray:
         """
         Run the QPU DWAVE Sampler with the DWAVE QUBO method and generate all
