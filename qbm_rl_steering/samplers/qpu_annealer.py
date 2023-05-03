@@ -10,7 +10,9 @@ except ImportError:
 
 class QPU:
     def __init__(self, big_gamma: Tuple[float, float], beta: float,
-                 n_replicas: int, n_nodes: int = 72, qfunc_it: int = 0) -> None:
+                 n_replicas: int, n_nodes: int = 72, qfunc_it: int = 0,
+                 dwave_token: str = "DEV-66ff199bc69a2ea5bb4223259859867c616de277",
+                 dwave_solver: str = "Advantage_system6.1") -> None:
         """
         Initialize a hardware quantum annealer (QA) that runs on the DWAVE
         system. Note that we do not have much control over the annealing
@@ -31,7 +33,10 @@ class QPU:
         self.qfunc_it = qfunc_it
 
         # D-WAVE QA
-        sampler = DWaveSampler(failover=True, retry_interval=10, solver='Advantage_system6.1') 
+        # sampler = DWaveSampler(failover=True, retry_interval=10, solver='Advantage_system6.1')
+        sampler = DWaveSampler(
+            token=dwave_token, failover=True, retry_interval=10,
+            solver=dwave_solver) 
         print("QPU {} was selected.".format(sampler.solver.name))
         self.annealer = EmbeddingComposite(sampler)
 
