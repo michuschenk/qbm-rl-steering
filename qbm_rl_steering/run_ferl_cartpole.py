@@ -37,17 +37,15 @@ def get_params() -> Tuple[Dict, Dict, Dict]:
         'small_gamma': 0.95,  # 0.90,
         'exploration_epsilon': (0.95, 0.),
         'exploration_fraction': 1.0,
-        'replay_batch_size': 16,  # 32,
+        'replay_batch_size': 16,  # 16, 
         'target_update_frequency': 1,
         'soft_update_factor': 1.  # 0.6
     }
 
     # Graph config and quantum annealing settings
     kwargs_anneal = {
-        'sampler_type': 'SQA',
-        'kwargs_qpu': {'aws_device':
-                       'arn:aws:braket:::device/qpu/d-wave/DW_2000Q_6',
-                       's3_location': None},
+        'sampler_type': 'QPU',  # 'SQA',
+        'kwargs_qpu': {},
         'n_replicas': 1,
         'n_meas_for_average': 1,
         'n_annealing_steps': 150,  # 100,
@@ -95,6 +93,8 @@ def run_episode(agent: QBMQ, with_render: bool = False) -> int:
 
     done = False
     while not done:
+        if total_steps % 10 == 0:
+            print(f'Running episode, step {total_steps}')
         act, _ = agent.predict(obs, deterministic=True)
         # act = env.action_space.sample()
         obs, reward, done, info = env.step(act)
@@ -118,17 +118,16 @@ def full_run(n_training_steps: int = 20) -> Tuple[QBMQ, pd.DataFrame]:
     agent = QBMQ(env=env, **kwargs_anneal, **kwargs_rl, **kwargs_qbm)
 
     # Evaluate agent first
-    # print(f'BEFORE TRAINING')
-    avg_i, std_i, max_i, min_i = evaluate(agent, n_evals=20)
-    # print(f'Avg +/- std: {avg_i:.1f} +/- {std_i:.1f}')
-    # print(f'Min, max: {min_i:.0f}, {max_i:.0f}')
-
+    print(f'BEFORE TRAINING')
+    avg_i, std_i, max_i, min_i = evaluate(agent, n_evals=1)
+ 
     # Train the agent
+    print(f'TRAIN AGENT')
     agent.learn(total_timesteps=n_training_steps)
 
     # Re-evaluate agent again
-    # print(f'AFTER TRAINING')
-    avg_f, std_f, max_f, min_f = evaluate(agent, n_evals=20)
+    print(f'AFTER TRAINING')
+    avg_f, std_f, max_f, min_f = evaluate(agent, n_evals=1)
     # print(f'Avg +/- std: {avg_f:.1f} +/- {std_f:.1f}')
     # print(f'Min, max: {min_f:.0f}, {max_f:.0f}')
 
@@ -147,9 +146,9 @@ if __name__ == "__main__":
     #    https://gist.github.com/ffrige/5623f560d408ad5343453b299a0c2846) it works very well. This is also incl.
     #    now an ADAM optimization.
 
-    n_training_steps = 30
+    n_training_steps = 50
 
-    n_runs = 10
+    n_runs = 1
     results_df = pd.DataFrame()
     for i in trange(n_runs):
         agent, res = full_run(n_training_steps)
@@ -161,7 +160,7 @@ if __name__ == "__main__":
     ax.set_ylabel('Cumulative reward')
     ax.set_xlabel('Run nb.')
 
-
+    results_df.to_pickle("res_run2.pkl")
 
     # Show one episode with rendered images
     # run_episode(agent, True)

@@ -16,7 +16,7 @@ except ImportError:
 try:
     from qbm_rl_steering.samplers.qpu_annealer import QPU
 except ImportError:
-    print('! Cannot import libraries required for QPU (Amazon Braket)...')
+    print('! Cannot import libraries required for QPU ...')
 
 # Qiskit samplers
 from qbm_rl_steering.samplers.qaoa_solver import QAOA
@@ -250,7 +250,7 @@ class QFunction(object):
                  n_replicas: int, big_gamma: Union[Tuple[float, float], float],
                  beta: Union[float, Tuple[float, float]], n_annealing_steps: int,
                  n_meas_for_average: int, n_rows_qbm: int, n_columns_qbm: int,
-                 kwargs_qpu: Dict) -> None:
+                 kwargs_qpu: Dict, qfunc_it=0) -> None:
         """Implements the Q function (state-action value function)
         represented by a quantum Boltzmann machine (QBM) that is trained
         using (simulated) quantum annealing or QAOA. The Boltzmann machine
@@ -290,12 +290,11 @@ class QFunction(object):
             self.sampler = SQA(
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
                 n_nodes=n_graph_nodes)
-        elif sampler_type == 'QA':
+        elif sampler_type == 'QPU':
+            print('SETTING PROPER QPU AS SAMPLER')
             self.sampler = QPU(
-                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas,
-                device=kwargs_qpu['aws_device'],
-                s3_location=kwargs_qpu['s3_location'],
-                n_nodes=n_graph_nodes)
+                big_gamma=big_gamma, beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes,
+                qfunc_it=qfunc_it)
         elif sampler_type == 'QAOA':
             self.sampler = QAOA(n_nodes=n_graph_nodes, simulator='qasm',
                                 n_shots=10, beta_final=beta)

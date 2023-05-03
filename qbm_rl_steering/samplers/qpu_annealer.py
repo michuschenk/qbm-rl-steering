@@ -2,17 +2,15 @@ from typing import Tuple, Dict
 import numpy as np
 
 try:
-    from braket.ocean_plugin import BraketDWaveSampler
-    from dwave.system.composites import EmbeddingComposite
+    from dwave.system import DWaveSampler
+    from dwave.system import EmbeddingComposite
 except ImportError:
     pass
 
 
 class QPU:
     def __init__(self, big_gamma: Tuple[float, float], beta: float,
-                 n_replicas: int, s3_location: Tuple[str, str],
-                 device: str = 'arn:aws:braket:::device/qpu/d-wave/DW_2000Q_6',
-                 n_nodes: int = 16) -> None:
+                 n_replicas: int, n_nodes: int = 72, qfunc_it: int = 0) -> None:
         """
         Initialize a hardware quantum annealer (QA) that runs on the DWAVE
         system. Note that we do not have much control over the annealing
@@ -23,20 +21,21 @@ class QPU:
         constant in (S)QA other than in SA).
         :param n_replicas: number of replications of the graph in the extended
         dimension (number of Trotter slices).
-        :param s3_location: your AWS bucket and folder where results go.
-        :param device: the QPU device that you want to use.
         :param n_nodes: the number of qubits of the chip. This number is also
         the size of the square QUBO matrix that defines the couplings between
         the qubits / nodes.
         """
         self.n_nodes = n_nodes
         self.n_replicas = n_replicas
+        self.n_calls = 0
+        self.qfunc_it = qfunc_it
 
         # D-WAVE QA
-        sampler = BraketDWaveSampler(s3_location, device)
+        sampler = DWaveSampler(failover=True, retry_interval=10, solver='Advantage_system6.1') 
+        print("QPU {} was selected.".format(sampler.solver.name))
         self.annealer = EmbeddingComposite(sampler)
 
-        print(" ! Warning: big_gammas are 'fake'. We don't know the actual "
+        print(" ! Warning: big_gammas are 'virtual'. We don't know the actual "
               "values ... ")
         self.big_gamma_init = big_gamma[0]
         self.big_gamma_final = big_gamma[1]
@@ -78,12 +77,19 @@ class QPU:
 
         spin_configurations = list(self.annealer.sample_qubo(
             Q=qubo_dict, num_reads=num_reads,
-            beta=self.beta_final, postprocess='SAMPLING',
-            anneal_schedule=((0., 0.), (20., 1.)),
-            readout_thermalization=0,
-            reduce_intersample_correlation=True,
+            # beta=self.beta_final,
+            # postprocess='SAMPLING',
+            # anneal_schedule=((0., 0.), (20., 1.)),
+            # readout_thermalization=0,
+            # reduce_intersample_correlation=True,
             answer_mode='raw'
         ).samples())
+
+        # print(f"spin_configurations: {spin_configurations}")
+
+        self.n_calls += 1
+        # print(f"{self.qfunc_it}, N_CALLS: {self.n_calls}")
+        # print(f"{self.qfunc_it}, N_READS: {num_reads}")
 
         # Convert to np array and flip all the 0s to -1s
         spin_configurations = np.array([
