@@ -294,7 +294,8 @@ class QFunction(object):
             print('SETTING PROPER QPU AS SAMPLER')
             self.sampler = QPU(
                 big_gamma=big_gamma, beta=beta, n_replicas=n_replicas, n_nodes=n_graph_nodes,
-                qfunc_it=qfunc_it)
+                qfunc_it=qfunc_it,
+                dwave_token=kwargs_qpu["token"], dwave_solver=kwargs_qpu["solver"])
         elif sampler_type == 'QAOA':
             self.sampler = QAOA(n_nodes=n_graph_nodes, simulator='qasm',
                                 n_shots=10, beta_final=beta)

@@ -241,6 +241,10 @@ class QBMQ(object):
                     spin_configs, visible_nodes, q_value, next_q_value,
                     sample.reward, learning_rate[it], adam_params=None, step=it)
 
+                print(f"\nIteration: {it}")
+                print(f"weights w_vh: {self.q_function.w_vh}")
+                print(f"weights w_hh: {self.q_function.w_hh}")
+
             if it % self.target_update_frequency == 0:
                 self._update_target_q_function()
 

@@ -1,0 +1,27 @@
+Metadata-Version: 2.1
+Name: qbm-rl-steering
+Version: 0.0.1.dev0
+Summary: SHORT DESCRIPTION OF PROJECT
+Home-page: 
+Author: Verena Kain
+Author-email: verena.kain@cern.ch
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6, <4
+Description-Content-Type: text/markdown
+Provides-Extra: core
+Provides-Extra: test
+Provides-Extra: dev
+Provides-Extra: doc
+Provides-Extra: all
+
+# qbm-rl-steering
+
+SHORT DESCRIPTION OF PROJECT
+
+You can use [Github-flavored Markdown](https://guides.github.com/features/mastering-markdown/)
+to write your content.
+
+## Purpose of this project
+## Getting started
+##

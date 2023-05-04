@@ -11,7 +11,7 @@ except ImportError:
 class QPU:
     def __init__(self, big_gamma: Tuple[float, float], beta: float,
                  n_replicas: int, n_nodes: int = 72, qfunc_it: int = 0,
-                 dwave_token: str = "DEV-66ff199bc69a2ea5bb4223259859867c616de277",
+                 dwave_token: str = "",
                  dwave_solver: str = "Advantage_system6.1") -> None:
         """
         Initialize a hardware quantum annealer (QA) that runs on the DWAVE
