@@ -47,7 +47,7 @@ def get_params() -> Tuple[Dict, Dict, Dict]:
     kwargs_anneal = {
         'sampler_type': 'QPU',
         'kwargs_qpu': {
-            'token': "DEV-0e07ab13594ade21154e9244ec6c6069198a5260",  #  "DEV-66ff199bc69a2ea5bb4223259859867c616de277",
+            'token': "DEV-38e429bcc17cbcdc2eab73b6849b7b1120b87ee8", # "DEV-0e07ab13594ade21154e9244ec6c6069198a5260",  #  "DEV-66ff199bc69a2ea5bb4223259859867c616de277",  #  
             'solver': "Advantage_system6.1"},
         'n_replicas': 1,
         'n_meas_for_average': 1,
@@ -194,3 +194,5 @@ if __name__ == "__main__":
 
     with open("w_vh_history.pkl", "wb") as fid:
         pickle.dump(agent.q_function.w_vh_history, fid)
+
+
